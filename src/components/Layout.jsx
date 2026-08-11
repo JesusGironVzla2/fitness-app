@@ -24,6 +24,7 @@ import NotificationPanel from './NotificationPanel';
 export default function Layout() {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
   const navigate = useNavigate();
   const { userRole, logout, isImpersonating, stopImpersonating, currentUser } = useAuth();
 
@@ -148,9 +149,38 @@ export default function Layout() {
                 Salir de Vista
               </button>
             )}
-            <div className="user-profile">
-              <div className="avatar">{userRole ? userRole.charAt(0).toUpperCase() : 'U'}</div>
-              <span className="user-name">{userRole === 'admin' ? 'Admin' : userRole === 'trainer' ? 'Trainer' : 'Alumno'}</span>
+            <div style={{ position: 'relative' }}>
+              <div className="user-profile" onClick={() => setShowProfileMenu(!showProfileMenu)}>
+                <div className="avatar">{userRole ? userRole.charAt(0).toUpperCase() : 'U'}</div>
+                <span className="user-name">{userRole === 'admin' ? 'Admin' : userRole === 'trainer' ? 'Trainer' : 'Alumno'}</span>
+              </div>
+              
+              {showProfileMenu && (
+                <div 
+                  className="glass" 
+                  style={{ 
+                    position: 'absolute', 
+                    top: '100%', 
+                    right: 0, 
+                    marginTop: '0.5rem', 
+                    padding: '0.5rem', 
+                    borderRadius: 'var(--radius)',
+                    minWidth: '160px',
+                    zIndex: 100,
+                    display: 'flex',
+                    flexDirection: 'column'
+                  }}
+                >
+                  <button 
+                    className="nav-item logout-btn" 
+                    onClick={handleLogout}
+                    style={{ padding: '0.75rem', width: '100%', justifyContent: 'flex-start', margin: 0, fontSize: '0.9rem' }}
+                  >
+                    <LogOut size={18} />
+                    <span>Cerrar Sesión</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </header>
