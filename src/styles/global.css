@@ -232,3 +232,62 @@ select option {
   gap: 1rem;
   margin-top: 1rem;
 }
+
+/* Responsive Fixes */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.page-header h1 {
+  font-size: 2rem;
+  margin-bottom: 0.25rem;
+}
+
+.page-header p {
+  color: var(--muted-foreground);
+}
+
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+  }
+  
+  .page-header button {
+    width: 100%;
+  }
+
+  .modal {
+    padding: 1.5rem 1rem;
+    max-width: 95%;
+  }
+
+  .modal-actions {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .modal-actions button {
+    width: 100%;
+  }
+
+  .input-group {
+    width: 100%;
+  }
+
+  /* Grid containers */
+  .exercises-grid, .students-grid, .trainers-grid, .dashboard-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Chat height fix for mobile */
+  .chat-page {
+    height: calc(100vh - 120px) !important; 
+  }
+}

@@ -18,9 +18,7 @@ export default function Workouts() {
   const [routineExercises, setRoutineExercises] = useState([]); // [{ exerciseId, sets, reps, weight }]
   
   // Temp state for adding an exercise to the current routine
-  const [tempExerciseId, setTempExerciseId] = useState('');
-  const [tempSets, setTempSets] = useState(4);
-  const [tempReps, setTempReps] = useState(12);
+  const [filterMuscle, setFilterMuscle] = useState('Todos');
 
   const { currentUser } = useAuth();
 
@@ -58,17 +56,30 @@ export default function Workouts() {
     }
   };
 
-  const addExerciseToRoutine = () => {
-    if (!tempExerciseId) return;
-    const exInfo = exercises.find(e => e.id === tempExerciseId);
-    setRoutineExercises([...routineExercises, {
-      exerciseId: tempExerciseId,
-      name: exInfo?.name || 'Desconocido',
-      sets: tempSets,
-      reps: tempReps,
-    }]);
-    setTempExerciseId('');
+  const handleToggleExercise = (ex) => {
+    const isSelected = routineExercises.some(r => r.exerciseId === ex.id);
+    if (isSelected) {
+      setRoutineExercises(routineExercises.filter(r => r.exerciseId !== ex.id));
+    } else {
+      setRoutineExercises([...routineExercises, {
+        exerciseId: ex.id,
+        name: ex.name,
+        sets: 4,
+        reps: 12,
+      }]);
+    }
   };
+
+  const handleUpdateRoutineExercise = (index, field, value) => {
+    const updated = [...routineExercises];
+    updated[index][field] = value;
+    setRoutineExercises(updated);
+  };
+
+  const muscleGroups = ['Todos', 'Pecho', 'Espalda', 'Piernas', 'Hombro', 'Bíceps', 'Tríceps', 'Abdomen'];
+  const filteredExercises = filterMuscle === 'Todos' 
+    ? exercises 
+    : exercises.filter(ex => ex.targetMuscle?.toLowerCase().includes(filterMuscle.toLowerCase()));
 
   const handleSaveRoutine = async (e) => {
     e.preventDefault();
@@ -159,42 +170,103 @@ export default function Workouts() {
               </div>
 
               <hr style={{ borderColor: 'var(--border)', margin: '1rem 0' }} />
-              <h3>Ejercicios</h3>
+              <h3>Añadir Ejercicios</h3>
+              <p style={{ color: 'var(--muted-foreground)', fontSize: '0.9rem', marginBottom: '1rem' }}>
+                Filtra por músculo y marca los ejercicios que deseas incluir en esta rutina.
+              </p>
 
-              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
-                <div className="input-group" style={{ flex: 2 }}>
-                  <label>Ejercicio</label>
-                  <select 
-                    value={tempExerciseId} 
-                    onChange={(e) => setTempExerciseId(e.target.value)}
-                    className="input-field"
-                    style={{ width: '100%' }}
+              <div className="filters-container" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
+                {muscleGroups.map(muscle => (
+                  <button 
+                    key={muscle}
+                    type="button"
+                    onClick={() => setFilterMuscle(muscle)}
+                    className={`badge ${filterMuscle === muscle ? 'active' : ''}`}
+                    style={{ 
+                      cursor: 'pointer', 
+                      border: 'none', 
+                      fontSize: '0.8rem', 
+                      padding: '0.4rem 0.8rem',
+                      background: filterMuscle === muscle ? 'var(--primary)' : 'rgba(255,255,255,0.05)',
+                      color: filterMuscle === muscle ? 'var(--primary-foreground)' : 'var(--muted-foreground)',
+                      whiteSpace: 'nowrap'
+                    }}
                   >
-                    <option value="">Seleccionar...</option>
-                    {exercises.map(ex => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
-                  </select>
-                </div>
-                <div className="input-group" style={{ flex: 1 }}>
-                  <label>Series</label>
-                  <input className="input-field" type="number" min="1" value={tempSets} onChange={(e) => setTempSets(e.target.value)} style={{ padding: '0.75rem' }} />
-                </div>
-                <div className="input-group" style={{ flex: 1 }}>
-                  <label>Reps</label>
-                  <input className="input-field" type="number" min="1" value={tempReps} onChange={(e) => setTempReps(e.target.value)} style={{ padding: '0.75rem' }} />
-                </div>
-                <button type="button" className="btn-secondary" onClick={addExerciseToRoutine} style={{ height: '42px', padding: '0 1rem' }}>
-                  <Plus size={16} />
-                </button>
+                    {muscle}
+                  </button>
+                ))}
+              </div>
+
+              <div style={{ maxHeight: '200px', overflowY: 'auto', background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+                {filteredExercises.length === 0 ? (
+                  <p style={{ textAlign: 'center', color: 'var(--muted-foreground)', margin: 0 }}>No hay ejercicios para este músculo.</p>
+                ) : (
+                  <div style={{ display: 'grid', gap: '0.5rem' }}>
+                    {filteredExercises.map(ex => {
+                      const isSelected = routineExercises.some(r => r.exerciseId === ex.id);
+                      return (
+                        <label key={ex.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', padding: '0.5rem', background: isSelected ? 'rgba(163, 230, 53, 0.1)' : 'transparent', borderRadius: '4px' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={isSelected}
+                            onChange={() => handleToggleExercise(ex)}
+                            style={{ accentColor: 'var(--primary)', width: '1.2rem', height: '1.2rem' }}
+                          />
+                          <span style={{ fontWeight: isSelected ? '600' : 'normal', color: isSelected ? 'var(--primary)' : 'var(--foreground)' }}>
+                            {ex.name}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {routineExercises.length > 0 && (
-                <div style={{ marginTop: '1rem', background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: 'var(--radius)' }}>
-                  {routineExercises.map((ex, i) => (
-                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0', borderBottom: '1px solid var(--border)' }}>
-                      <span><Dumbbell size={14} style={{marginRight: '0.5rem', color: 'var(--primary)'}} /> {ex.name}</span>
-                      <span style={{ color: 'var(--muted-foreground)' }}>{ex.sets} series x {ex.reps} reps</span>
-                    </div>
-                  ))}
+                <div style={{ marginTop: '1.5rem' }}>
+                  <h3 style={{ marginBottom: '1rem' }}>Ejercicios Seleccionados</h3>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {routineExercises.map((ex, i) => (
+                      <div key={i} className="glass" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', padding: '1rem', borderRadius: 'var(--radius)', gap: '1rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', flex: '1 1 100%', minWidth: '150px' }}>
+                          <Dumbbell size={16} style={{marginRight: '0.5rem', color: 'var(--primary)'}} /> 
+                          <span style={{ fontWeight: '500' }}>{ex.name}</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem', flex: '1 1 auto', alignItems: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                            <label style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>Series:</label>
+                            <input 
+                              type="number" 
+                              min="1" 
+                              className="input-field" 
+                              style={{ width: '60px', padding: '0.25rem 0.5rem' }} 
+                              value={ex.sets}
+                              onChange={(e) => handleUpdateRoutineExercise(i, 'sets', e.target.value)}
+                            />
+                          </div>
+                          <span style={{ color: 'var(--muted-foreground)' }}>x</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                            <label style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>Reps:</label>
+                            <input 
+                              type="number" 
+                              min="1" 
+                              className="input-field" 
+                              style={{ width: '60px', padding: '0.25rem 0.5rem' }} 
+                              value={ex.reps}
+                              onChange={(e) => handleUpdateRoutineExercise(i, 'reps', e.target.value)}
+                            />
+                          </div>
+                          <button 
+                            type="button" 
+                            style={{ background: 'transparent', border: 'none', color: 'var(--destructive)', marginLeft: 'auto', padding: '0.25rem' }}
+                            onClick={() => handleToggleExercise({ id: ex.exerciseId })}
+                          >
+                            X
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 

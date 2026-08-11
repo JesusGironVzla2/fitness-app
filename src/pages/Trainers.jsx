@@ -176,24 +176,6 @@ export default function Trainers() {
       )}
 
       <style>{`
-        .page-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 2rem;
-          gap: 1rem;
-          flex-wrap: wrap;
-        }
-
-        .page-header h1 {
-          font-size: 2rem;
-          margin-bottom: 0.25rem;
-        }
-
-        .page-header p {
-          color: var(--muted-foreground);
-        }
-
         .empty-state {
           display: flex;
           flex-direction: column;
