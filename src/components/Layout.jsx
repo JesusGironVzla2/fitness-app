@@ -16,7 +16,8 @@ import {
   Activity,
   MessageSquare,
   ClipboardList,
-  LifeBuoy
+  LifeBuoy,
+  Sparkles
 } from 'lucide-react';
 import '../styles/global.css';
 import NotificationPanel from './NotificationPanel';
@@ -48,6 +49,7 @@ export default function Layout() {
       { name: 'Mi Progreso', path: '/progreso', icon: Activity },
       { name: 'Suplementación', path: '/suplementacion', icon: Pill },
       { name: 'Mensajes', path: '/mensajes', icon: MessageSquare },
+      { name: 'Consejos', path: '/consejos', icon: Sparkles },
       { name: 'Soporte', path: '/soporte', icon: LifeBuoy },
       { name: 'Configuración', path: '/configuracion', icon: Settings },
     ],
@@ -60,6 +62,7 @@ export default function Layout() {
       { name: 'Mi Progreso', path: '/progreso', icon: Activity },
       { name: 'Suplementación', path: '/suplementacion', icon: Pill },
       { name: 'Mensajes', path: '/mensajes', icon: MessageSquare },
+      { name: 'Consejos', path: '/consejos', icon: Sparkles },
       { name: 'Soporte', path: '/soporte', icon: LifeBuoy },
       { name: 'Configuración', path: '/configuracion', icon: Settings },
     ],
@@ -68,6 +71,7 @@ export default function Layout() {
       { name: 'Mis Rutinas', path: '/mis-rutinas', icon: ClipboardList },
       { name: 'Mi Progreso', path: '/progreso', icon: Activity },
       { name: 'Mensajes', path: '/mensajes', icon: MessageSquare },
+      { name: 'Consejos', path: '/consejos', icon: Sparkles },
       { name: 'Soporte', path: '/soporte', icon: LifeBuoy },
       { name: 'Configuración', path: '/configuracion', icon: Settings },
     ]

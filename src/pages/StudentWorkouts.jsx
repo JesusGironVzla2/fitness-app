@@ -3,6 +3,7 @@ import { collection, query, where, getDocs, updateDoc, doc, addDoc } from 'fireb
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { Calendar, CheckCircle, MessageSquare, Plus, Dumbbell } from 'lucide-react';
+import { getDoc } from 'firebase/firestore';
 import '../styles/global.css';
 
 export default function StudentWorkouts() {
@@ -94,14 +95,42 @@ export default function StudentWorkouts() {
     }
 
     try {
+      // Determinar si es alumno y obtener trainerId
+      let finalTrainerId = currentUser.uid;
+      let studentName = currentUser.displayName || currentUser.email || "Alumno";
+      
+      const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        if (data.role === 'student' || data.role === 'user') {
+          finalTrainerId = data.trainerId || currentUser.uid;
+          studentName = data.name || studentName;
+        }
+      }
+
       await addDoc(collection(db, "workouts"), {
         studentId: currentUser.uid,
-        trainerId: currentUser.uid,
+        trainerId: finalTrainerId,
         date: selectedDate,
         name: routineName || `Entrenamiento Libre - ${new Date(selectedDate + 'T12:00:00Z').toLocaleDateString('es-ES')}`,
         exercises: routineExercises,
         createdAt: new Date().toISOString()
       });
+
+      // Enviar notificación al entrenador si fue creado por un alumno
+      if (finalTrainerId !== currentUser.uid) {
+        await addDoc(collection(db, "notifications"), {
+          title: "Entrenamiento Libre Registrado",
+          message: `${studentName} registró un entrenamiento libre para el ${new Date(selectedDate + 'T12:00:00Z').toLocaleDateString('es-ES')}.`,
+          senderId: currentUser.uid,
+          senderName: studentName,
+          senderRole: 'student',
+          targetRole: 'trainer',
+          targetUserId: finalTrainerId,
+          createdAt: new Date().toISOString()
+        });
+      }
+
       setShowModal(false);
       setRoutineExercises([]);
       setRoutineName('');

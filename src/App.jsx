@@ -12,6 +12,7 @@ import Supplements from './pages/Supplements';
 import Chat from './pages/Chat';
 import Settings from './pages/Settings';
 import Support from './pages/Support';
+import Tips from './pages/Tips';
 import ProtectedRoute from './components/ProtectedRoute';
 import { useAuth } from './context/AuthContext';
 
@@ -46,6 +47,7 @@ function App() {
           <Route path="/mensajes" element={<Chat />} />
           <Route path="/soporte" element={<Support />} />
           <Route path="/configuracion" element={<Settings />} />
+          <Route path="/consejos" element={<Tips />} />
         </Route>
         
         <Route path="/" element={

@@ -3,6 +3,8 @@ import { Users, Activity, TrendingUp, Dumbbell, ClipboardList, CheckCircle, Scal
 import { useAuth } from '../context/AuthContext';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { ResponsiveContainer, AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export default function Dashboard() {
   const { userRole, currentUser } = useAuth();
@@ -14,7 +16,9 @@ export default function Dashboard() {
   const [workouts, setWorkouts] = useState([]);
   const [exercisesLib, setExercisesLib] = useState({});
   const [studentStats, setStudentStats] = useState({ weight: '-', fat: '-', rms: 0 });
+  const [studentStats, setStudentStats] = useState({ weight: '-', fat: '-', rms: 0 });
   const [insights, setInsights] = useState([]);
+  const [loadingAI, setLoadingAI] = useState(false);
 
   // UI state
   const [selectedExercise, setSelectedExercise] = useState('');
@@ -70,68 +74,10 @@ export default function Dashboard() {
           });
 
           // --- Generate Insights ---
-          const newInsights = [];
-
-          // 1. Analyze RMs (Evolución de Fuerza)
-          const rmByExercise = {};
-          rms.forEach(log => {
-            if (!rmByExercise[log.exerciseOrBodyPart]) rmByExercise[log.exerciseOrBodyPart] = [];
-            rmByExercise[log.exerciseOrBodyPart].push(log);
-          });
-
-          Object.entries(rmByExercise).forEach(([exercise, exerciseLogs]) => {
-            if (exerciseLogs.length >= 2) {
-              const prev = exerciseLogs[exerciseLogs.length - 2];
-              const last = exerciseLogs[exerciseLogs.length - 1];
-              const prevVal = parseFloat(prev.value);
-              const lastVal = parseFloat(last.value);
-              const diff = (lastVal - prevVal).toFixed(1);
-
-              if (diff > 0) {
-                newInsights.push({ type: 'positive', text: `¡Aumentaste ${diff}kg en ${exercise}! Pasaste de ${prevVal}kg a ${lastVal}kg.` });
-              } else if (diff < 0) {
-                newInsights.push({ type: 'negative', text: `Tu RM en ${exercise} bajó ${Math.abs(diff)}kg (de ${prevVal}kg a ${lastVal}kg).` });
-              }
-            }
-          });
-
-          // 2. Analyze Weight
-          const weights = metrics.filter(m => m.metric === 'Peso Corporal');
-          if (weights.length >= 2) {
-            const prev = weights[weights.length - 2];
-            const last = weights[weights.length - 1];
-            const prevVal = parseFloat(prev.value);
-            const lastVal = parseFloat(last.value);
-            const diff = (lastVal - prevVal).toFixed(1);
-
-            if (diff < 0) {
-               newInsights.push({ type: 'positive', text: `Has bajado ${Math.abs(diff)}kg de peso corporal. ¡Excelente trabajo!` });
-            } else if (diff > 0) {
-               newInsights.push({ type: 'neutral', text: `Tu peso corporal aumentó ${diff}kg desde tu última medición.` });
-            }
-          }
-
-          // 3. Analyze Fat
-          const fats = metrics.filter(m => m.metric === '% Grasa');
-          if (fats.length >= 2) {
-            const prev = fats[fats.length - 2];
-            const last = fats[fats.length - 1];
-            const prevVal = parseFloat(prev.value);
-            const lastVal = parseFloat(last.value);
-            const diff = (lastVal - prevVal).toFixed(1);
-
-            if (diff < 0) {
-               newInsights.push({ type: 'positive', text: `Has reducido ${Math.abs(diff)}% de grasa corporal. ¡Sigue así!` });
-            } else if (diff > 0) {
-               newInsights.push({ type: 'neutral', text: `Tu porcentaje de grasa subió un ${diff}%.` });
-            }
-          }
-
-          if (newInsights.length === 0) {
-            newInsights.push({ type: 'neutral', text: `Sigue registrando tus RMs y medidas corporales para generar análisis automáticos de tu progreso.` });
-          }
-
-          setInsights(newInsights.reverse().slice(0, 4));
+          setLoadingAI(true);
+          const newInsights = await generateInsights(rms, metrics);
+          setInsights(newInsights);
+          setLoadingAI(false);
           
           if (rms.length > 0) {
             const uniqueExercises = [...new Set(rms.map(l => l.exerciseOrBodyPart))];
@@ -143,49 +89,109 @@ export default function Dashboard() {
     }
   }, [userRole, currentUser]);
 
+  const generateInsights = async (rms, metrics) => {
+    const weights = metrics.filter(m => m.metric === 'Peso Corporal');
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+
+    if (apiKey && apiKey.length > 10) {
+      try {
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash", generationConfig: { responseMimeType: "application/json" } });
+        
+        // Compact the data to save tokens
+        const summaryRMs = rms.map(r => ({ e: r.exerciseOrBodyPart, v: r.value, d: new Date(r.createdAt).toLocaleDateString() })).slice(-20);
+        const summaryWeights = weights.map(w => ({ v: w.value, d: new Date(w.createdAt).toLocaleDateString() })).slice(-10);
+
+        const prompt = `
+          Actúa como un entrenador personal analítico. Evalúa los siguientes datos de entrenamiento.
+          Identifica logros o áreas de mejora de forma concisa, directa y motivadora (máx 1 oración por punto).
+          Devuelve un JSON exacto con un array de 3 objetos: [{"type": "positive" | "negative" | "neutral", "text": "string"}].
+          RMs: ${JSON.stringify(summaryRMs)}
+          Peso Corporal: ${JSON.stringify(summaryWeights)}
+        `;
+
+        const result = await model.generateContent(prompt);
+        const responseText = result.response.text();
+        return JSON.parse(responseText);
+      } catch (error) {
+        console.error("Gemini Error:", error);
+      }
+    }
+
+    // Fallback: Heurística manual (IA Simulada)
+    const newInsights = [];
+    if (weights.length >= 2) {
+      const diff = (parseFloat(weights[weights.length - 1].value) - parseFloat(weights[weights.length - 2].value)).toFixed(1);
+      if (diff < 0) newInsights.push({ type: 'positive', text: `Has bajado ${Math.abs(diff)}kg de peso corporal. ¡Excelente trabajo!` });
+      else if (diff > 0) newInsights.push({ type: 'neutral', text: `Tu peso aumentó ${diff}kg desde la última vez.` });
+    }
+    if (rms.length >= 2) {
+      newInsights.push({ type: 'positive', text: `Continúas registrando tu fuerza. Tienes un total de ${rms.length} mediciones históricas.` });
+    }
+    if (newInsights.length === 0) {
+      newInsights.push({ type: 'neutral', text: `Registra más datos para desbloquear el análisis inteligente.` });
+    }
+    return newInsights.reverse().slice(0, 3);
+  };
+
   const uniqueExercises = [...new Set(rmLogs.map(l => l.exerciseOrBodyPart))];
 
-  const renderChart = (dataset, labelSuffix) => {
+  const renderChart = (dataset, labelSuffix, isArea = false) => {
     if (!dataset || dataset.length === 0) {
       return <div style={{display:'flex', height:'100%', alignItems:'center', justifyContent:'center', color:'var(--muted-foreground)'}}>No hay datos registrados aún.</div>;
     }
     
-    const maxVal = Math.max(...dataset.map(l => parseFloat(l.value))) || 100;
-    const minVal = Math.min(...dataset.map(l => parseFloat(l.value))) || 0;
-    
-    const points = dataset.map((log, index) => {
-      const x = (index / (dataset.length === 1 ? 1 : dataset.length - 1)) * 100;
-      const range = (maxVal - minVal) === 0 ? 1 : (maxVal - minVal);
-      const y = 100 - (((parseFloat(log.value) - minVal) / range) * 80 + 10);
-      return `${x},${y}`;
-    }).join(" ");
+    // Prepare data for recharts
+    const formattedData = dataset.map(log => ({
+      date: new Date(log.createdAt).toLocaleDateString('es-ES', { month: 'short', day: 'numeric' }),
+      value: parseFloat(log.value)
+    }));
+
+    const ChartComponent = isArea ? AreaChart : LineChart;
+    const DataComponent = isArea ? Area : Line;
 
     return (
-      <div style={{ position: 'relative', width: '100%', height: '100%', padding: '1rem 0' }}>
-        <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
-          <polyline 
-            fill="none" 
-            stroke="var(--primary)" 
-            strokeWidth="3" 
-            points={points} 
-            strokeLinejoin="round" 
-            strokeLinecap="round"
+      <ResponsiveContainer width="100%" height="100%">
+        <ChartComponent data={formattedData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+          <defs>
+            <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.3}/>
+              <stop offset="95%" stopColor="var(--primary)" stopOpacity={0}/>
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+          <XAxis 
+            dataKey="date" 
+            stroke="var(--muted-foreground)" 
+            fontSize={12}
+            tickLine={false}
+            axisLine={false}
+            dy={10}
           />
-          {dataset.map((log, index) => {
-             const x = (index / (dataset.length === 1 ? 1 : dataset.length - 1)) * 100;
-             const range = (maxVal - minVal) === 0 ? 1 : (maxVal - minVal);
-             const y = 100 - (((parseFloat(log.value) - minVal) / range) * 80 + 10);
-             return (
-               <g key={index}>
-                 <circle cx={x} cy={y} r="4" fill="var(--background)" stroke="var(--primary)" strokeWidth="2" />
-                 <text x={x} y={y - 8} fill="var(--foreground)" fontSize="5" textAnchor="middle" fontWeight="bold">
-                   {log.value}{labelSuffix}
-                 </text>
-               </g>
-             )
-          })}
-        </svg>
-      </div>
+          <YAxis 
+            stroke="var(--muted-foreground)" 
+            fontSize={12}
+            tickLine={false}
+            axisLine={false}
+            tickFormatter={(val) => `${val}${labelSuffix}`}
+            domain={['dataMin - 5', 'dataMax + 5']}
+          />
+          <Tooltip 
+            contentStyle={{ backgroundColor: 'var(--background)', borderColor: 'var(--border)', borderRadius: '8px', color: 'var(--foreground)' }}
+            itemStyle={{ color: 'var(--primary)', fontWeight: 'bold' }}
+            formatter={(value) => [`${value} ${labelSuffix}`, 'Valor']}
+          />
+          <DataComponent 
+            type="monotone" 
+            dataKey="value" 
+            stroke="var(--primary)" 
+            strokeWidth={3}
+            fillOpacity={1} 
+            fill={isArea ? "url(#colorValue)" : "none"} 
+            activeDot={{ r: 6, fill: 'var(--primary)', stroke: 'var(--background)', strokeWidth: 2 }}
+          />
+        </ChartComponent>
+      </ResponsiveContainer>
     );
   };
 
@@ -330,7 +336,12 @@ export default function Dashboard() {
           <h3 style={{ margin: 0, color: '#a855f7' }}>Análisis Inteligente</h3>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          {insights.map((insight, idx) => (
+          {loadingAI ? (
+            <div style={{ color: 'var(--muted-foreground)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div className="spinner" style={{ width: '16px', height: '16px', border: '2px solid rgba(168, 85, 247, 0.3)', borderTopColor: '#a855f7', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+              Analizando tus datos...
+            </div>
+          ) : insights.length > 0 ? insights.map((insight, idx) => (
             <div key={idx} style={{ 
               display: 'flex', alignItems: 'flex-start', gap: '0.75rem', 
               background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: 'var(--radius)',
@@ -343,7 +354,9 @@ export default function Dashboard() {
               </div>
               <p style={{ margin: 0, fontSize: '0.95rem', lineHeight: '1.4' }}>{insight.text}</p>
             </div>
-          ))}
+          )) : (
+            <div style={{ color: 'var(--muted-foreground)' }}>Agrega datos de entrenamiento para obtener análisis.</div>
+          )}
         </div>
       </div>
 
@@ -382,9 +395,9 @@ export default function Dashboard() {
           </div>
           
           <div className="chart-container" style={{ height: '350px', marginTop: '1rem' }}>
-            {chartMode === 'rm' && renderChart(rmLogs.filter(l => l.exerciseOrBodyPart === selectedExercise), 'kg')}
-            {chartMode === 'weight' && renderChart(metricLogs.filter(l => l.metric === 'Peso Corporal'), 'kg')}
-            {chartMode === 'fat' && renderChart(metricLogs.filter(l => l.metric === '% Grasa'), '%')}
+            {chartMode === 'rm' && renderChart(rmLogs.filter(l => l.exerciseOrBodyPart === selectedExercise), 'kg', false)}
+            {chartMode === 'weight' && renderChart(metricLogs.filter(l => l.metric === 'Peso Corporal'), 'kg', true)}
+            {chartMode === 'fat' && renderChart(metricLogs.filter(l => l.metric === '% Grasa'), '%', true)}
           </div>
         </div>
 

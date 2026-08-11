@@ -8,7 +8,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon.svg'],
+      includeAssets: ['icon.png'],
       manifest: {
         name: 'CoachNode App',
         short_name: 'CoachNode',

@@ -46,7 +46,7 @@ export default function Login() {
     <div className="login-container">
       <div className="login-card glass">
         <div className="logo-container">
-          <Dumbbell className="logo-icon" size={48} color="var(--primary)" />
+          <img src="/icon.png" alt="CoachNode Logo" style={{ width: '80px', height: '80px', objectFit: 'contain' }} />
           <h1 className="logo-text">Coach<span className="accent">Node</span></h1>
         </div>
         <p className="subtitle">
