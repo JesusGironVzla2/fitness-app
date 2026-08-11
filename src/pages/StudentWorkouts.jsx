@@ -19,6 +19,8 @@ export default function StudentWorkouts() {
   const [filterMuscle, setFilterMuscle] = useState('Todos');
   const [routineName, setRoutineName] = useState('');
   const [routineExercises, setRoutineExercises] = useState([]);
+  const [showCreateExerciseModal, setShowCreateExerciseModal] = useState(false);
+  const [newExercise, setNewExercise] = useState({ name: '', targetMuscle: 'Pecho', description: '', imageUrl: '' });
 
   useEffect(() => {
     if (currentUser) fetchWorkouts();
@@ -105,6 +107,30 @@ export default function StudentWorkouts() {
       fetchWorkouts();
     } catch (err) {
       console.error("Error creating live workout:", err);
+    }
+  };
+
+  const handleCreateExerciseInline = async (e) => {
+    e.preventDefault();
+    try {
+      const docRef = await addDoc(collection(db, "exercises"), {
+        ...newExercise,
+        createdAt: new Date().toISOString()
+      });
+      const createdEx = { id: docRef.id, ...newExercise };
+      setExercises([...exercises, createdEx]);
+      
+      setRoutineExercises([...routineExercises, {
+        exerciseId: createdEx.id,
+        name: createdEx.name,
+        sets: 4,
+        reps: 12,
+      }]);
+      
+      setShowCreateExerciseModal(false);
+      setNewExercise({ name: '', targetMuscle: 'Pecho', description: '', imageUrl: '' });
+    } catch (err) {
+      console.error("Error creating exercise inline:", err);
     }
   };
 
@@ -296,7 +322,16 @@ export default function StudentWorkouts() {
               </div>
 
               <hr style={{ borderColor: 'var(--border)', margin: '1rem 0' }} />
-              <h3>Añadir Ejercicios</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3>Añadir Ejercicios</h3>
+                <button 
+                  type="button" 
+                  onClick={() => setShowCreateExerciseModal(true)}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '0.25rem', cursor: 'pointer', fontSize: '0.9rem', fontWeight: '500' }}
+                >
+                  <Plus size={16} /> Crear Ejercicio
+                </button>
+              </div>
               <p style={{ color: 'var(--muted-foreground)', fontSize: '0.9rem', marginBottom: '1rem' }}>
                 Filtra por músculo y marca los ejercicios que vas a hacer.
               </p>
@@ -390,6 +425,57 @@ export default function StudentWorkouts() {
               <div className="modal-actions" style={{ marginTop: '2rem' }}>
                 <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>Cancelar</button>
                 <button type="submit" className="btn-primary">Comenzar Entrenamiento</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showCreateExerciseModal && (
+        <div className="modal-overlay" style={{ zIndex: 110 }}>
+          <div className="modal glass">
+            <h2>Nuevo Ejercicio</h2>
+            <form onSubmit={handleCreateExerciseInline} className="modal-form">
+              <div className="input-group">
+                <label>Nombre del Ejercicio</label>
+                <input 
+                  type="text" 
+                  placeholder="Ej. Press de Banca" 
+                  className="input-field"
+                  value={newExercise.name}
+                  onChange={(e) => setNewExercise({...newExercise, name: e.target.value})}
+                  required
+                />
+              </div>
+
+              <div className="input-group">
+                <label>Músculo Principal</label>
+                <select 
+                  className="input-field"
+                  value={newExercise.targetMuscle}
+                  onChange={(e) => setNewExercise({...newExercise, targetMuscle: e.target.value})}
+                  required
+                >
+                  {muscleGroups.filter(m => m !== 'Todos').map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="input-group">
+                <label>Descripción / Ejecución (Opcional)</label>
+                <textarea 
+                  className="input-field"
+                  placeholder="Instrucciones..." 
+                  value={newExercise.description}
+                  onChange={(e) => setNewExercise({...newExercise, description: e.target.value})}
+                  rows="2"
+                />
+              </div>
+
+              <div className="modal-actions">
+                <button type="button" className="btn-secondary" onClick={() => setShowCreateExerciseModal(false)}>Cancelar</button>
+                <button type="submit" className="btn-primary">Guardar Ejercicio</button>
               </div>
             </form>
           </div>
