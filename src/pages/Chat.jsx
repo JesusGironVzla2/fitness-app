@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { collection, query, where, getDocs, addDoc, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
-import { Send, User, MessageSquare } from 'lucide-react';
+import { Send, User, MessageSquare, ArrowLeft } from 'lucide-react';
 import '../styles/global.css';
 
 export default function Chat() {
@@ -107,11 +107,11 @@ export default function Chat() {
   };
 
   return (
-    <div className="chat-page" style={{ display: 'flex', height: 'calc(100vh - 120px)', gap: '1.5rem' }}>
+    <div className="chat-page">
       
       {/* Sidebar for conversations */}
       {(userRole === 'trainer' || userRole === 'admin') && (
-        <div className="glass" style={{ width: '300px', display: 'flex', flexDirection: 'column', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
+        <div className={`chat-sidebar glass ${selectedUser ? 'hidden-on-mobile' : ''}`}>
           <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border)' }}>
             <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Mensajes</h2>
           </div>
@@ -145,11 +145,16 @@ export default function Chat() {
       )}
 
       {/* Chat Area */}
-      <div className="glass" style={{ flex: 1, display: 'flex', flexDirection: 'column', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
+      <div className={`chat-main glass ${!selectedUser && (userRole === 'trainer' || userRole === 'admin') ? 'hidden-on-mobile' : ''}`}>
         {selectedUser ? (
           <>
             <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--primary)', color: 'black', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>
+              {(userRole === 'trainer' || userRole === 'admin') && (
+                <button className="chat-back-btn" onClick={() => setSelectedUser(null)}>
+                  <ArrowLeft size={24} />
+                </button>
+              )}
+              <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--primary)', color: 'black', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', flexShrink: 0 }}>
                 {selectedUser.name ? selectedUser.name.charAt(0).toUpperCase() : 'U'}
               </div>
               <h2 style={{ margin: 0, fontSize: '1.25rem' }}>{selectedUser.name}</h2>
@@ -217,6 +222,70 @@ export default function Chat() {
           </div>
         )}
       </div>
+
+      <style>{`
+        .chat-page {
+          display: flex;
+          height: calc(100vh - 120px);
+          gap: 1.5rem;
+          position: relative;
+        }
+        
+        .chat-sidebar {
+          width: 300px;
+          display: flex;
+          flex-direction: column;
+          border-radius: var(--radius);
+          overflow: hidden;
+          transition: all 0.3s ease;
+        }
+        
+        .chat-main {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          border-radius: var(--radius);
+          overflow: hidden;
+        }
+        
+        .chat-back-btn {
+          display: none;
+        }
+        
+        @media (max-width: 768px) {
+          .chat-page {
+            gap: 0;
+            height: calc(100vh - 150px); /* Adjust height slightly for mobile Safari/Chrome */
+          }
+          
+          .chat-sidebar {
+            width: 100%;
+          }
+          
+          .chat-sidebar.hidden-on-mobile {
+            display: none;
+          }
+          
+          .chat-main {
+            width: 100%;
+          }
+          
+          .chat-main.hidden-on-mobile {
+            display: none;
+          }
+          
+          .chat-back-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            border: none;
+            color: var(--primary);
+            cursor: pointer;
+            padding-right: 0.5rem;
+          }
+        }
+      `}</style>
     </div>
   );
 }
