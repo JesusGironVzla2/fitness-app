@@ -195,6 +195,16 @@ export default function Layout() {
           display: flex;
           flex-direction: column;
           gap: 0.5rem;
+          overflow-y: auto;
+        }
+        
+        .sidebar-nav::-webkit-scrollbar {
+          width: 4px;
+        }
+        
+        .sidebar-nav::-webkit-scrollbar-thumb {
+          background-color: var(--border);
+          border-radius: 4px;
         }
 
         .nav-item {

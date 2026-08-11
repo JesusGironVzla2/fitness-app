@@ -282,7 +282,11 @@ select option {
   }
 
   /* Grid containers */
-  .exercises-grid, .students-grid, .trainers-grid, .dashboard-grid {
+  .exercises-grid, .students-grid, .trainers-grid, .dashboard-grid, .grid,
+  [style*="grid-template-columns: 1fr 1fr"],
+  [style*="grid-template-columns: 2fr 1fr"],
+  [style*="grid-template-columns: 1fr 2fr"],
+  [style*="grid-template-columns: repeat(auto-fill"] {
     grid-template-columns: 1fr !important;
   }
 
