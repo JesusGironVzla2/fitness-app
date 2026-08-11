@@ -10,8 +10,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg'],
       manifest: {
-        name: 'FitPro App',
-        short_name: 'FitPro',
+        name: 'CoachNode App',
+        short_name: 'CoachNode',
         description: 'Plataforma Inteligente para Entrenadores y Alumnos',
         theme_color: '#000000',
         background_color: '#000000',

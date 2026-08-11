@@ -168,7 +168,7 @@ export default function Support() {
             <h2 style={{ margin: 0, fontSize: '1.25rem' }}>
               {userRole === 'admin' 
                 ? (selectedUser ? selectedUser.name || selectedUser.email : 'Selecciona un usuario') 
-                : 'Soporte FitPro'}
+                : 'Soporte CoachNode'}
             </h2>
             <div style={{ fontSize: '0.85rem', color: 'var(--muted-foreground)' }}>
               {userRole === 'admin' ? 'Ticket de ayuda' : 'Comunícate directamente con el administrador'}

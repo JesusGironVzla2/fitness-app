@@ -85,7 +85,7 @@ export default function Layout() {
       <aside className={`sidebar glass ${isSidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
           <Dumbbell className="logo-icon" size={32} color="var(--primary)" />
-          <h2>Fit<span className="accent">Pro</span></h2>
+          <h2>Coach<span className="accent">Node</span></h2>
           <button className="mobile-close" onClick={() => setSidebarOpen(false)}>
             <X size={24} />
           </button>

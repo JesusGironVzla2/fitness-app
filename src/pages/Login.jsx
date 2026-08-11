@@ -47,7 +47,7 @@ export default function Login() {
       <div className="login-card glass">
         <div className="logo-container">
           <Dumbbell className="logo-icon" size={48} color="var(--primary)" />
-          <h1 className="logo-text">Fit<span className="accent">Pro</span></h1>
+          <h1 className="logo-text">Coach<span className="accent">Node</span></h1>
         </div>
         <p className="subtitle">
           {isRegister ? 'Crea tu cuenta de Administrador' : 'Lleva tu entrenamiento al siguiente nivel'}
