@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, doc, setDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, setDoc, updateDoc } from 'firebase/firestore';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -24,7 +24,7 @@ export default function Trainers() {
     try {
       const q = query(collection(db, "users"), where("role", "==", "trainer"));
       const querySnapshot = await getDocs(q);
-      const trainersData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const trainersData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(t => t.status !== 'deleted');
       setTrainers(trainersData);
     } catch (err) {
       console.error("Error fetching trainers:", err);
@@ -45,6 +45,7 @@ export default function Trainers() {
         email: newTrainer.email,
         name: newTrainer.name,
         role: 'trainer',
+        status: 'active',
         createdAt: new Date().toISOString()
       });
 
@@ -59,6 +60,17 @@ export default function Trainers() {
     } catch (err) {
       console.error("Error creating trainer:", err);
       setActionError(err.message);
+    }
+  };
+
+  const handleUpdateStatus = async (trainerId, newStatus) => {
+    if (newStatus === 'deleted' && !window.confirm("¿Seguro que deseas eliminar a este entrenador?")) return;
+    
+    try {
+      await updateDoc(doc(db, "users", trainerId), { status: newStatus });
+      fetchTrainers();
+    } catch (err) {
+      console.error("Error updating status:", err);
     }
   };
 
@@ -96,19 +108,36 @@ export default function Trainers() {
                   </div>
                 </div>
                 <div className="trainer-footer">
-                  <span className="badge">Activo</span>
+                  <span className={`badge ${trainer.status === 'suspended' ? 'suspended' : ''}`}>
+                    {trainer.status === 'suspended' ? 'Suspendido' : 'Activo'}
+                  </span>
                   <span className="date">Registrado el {new Date(trainer.createdAt).toLocaleDateString()}</span>
                 </div>
-                <button 
-                  className="btn-secondary" 
-                  style={{ width: '100%', marginTop: '0.5rem' }}
-                  onClick={() => {
-                    impersonate(trainer);
-                    navigate('/');
-                  }}
-                >
-                  Entrar como Entrenador
-                </button>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '1rem' }}>
+                  <button 
+                    className="btn-secondary" 
+                    onClick={() => {
+                      impersonate(trainer);
+                      navigate('/');
+                    }}
+                  >
+                    Entrar
+                  </button>
+                  <button 
+                    className="btn-secondary" 
+                    style={{ color: trainer.status === 'suspended' ? 'var(--primary)' : 'var(--destructive)', borderColor: trainer.status === 'suspended' ? 'var(--primary)' : 'var(--destructive)' }}
+                    onClick={() => handleUpdateStatus(trainer.id, trainer.status === 'suspended' ? 'active' : 'suspended')}
+                  >
+                    {trainer.status === 'suspended' ? 'Activar' : 'Suspender'}
+                  </button>
+                  <button 
+                    className="text-btn" 
+                    style={{ gridColumn: 'span 2', color: 'var(--muted-foreground)', padding: '0.5rem' }}
+                    onClick={() => handleUpdateStatus(trainer.id, 'deleted')}
+                  >
+                    Eliminar
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -232,6 +261,15 @@ export default function Trainers() {
         .date {
           font-size: 0.8rem;
           color: var(--muted-foreground);
+        }
+
+        .badge.suspended {
+          background: rgba(239, 68, 68, 0.1);
+          color: var(--destructive);
+        }
+
+        .text-btn:hover {
+          color: var(--destructive) !important;
         }
 
         /* Modal Styles */

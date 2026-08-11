@@ -4,9 +4,11 @@ import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { db, secondaryAuth } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { UserPlus, Mail, Key, Activity, TrendingUp, ClipboardList, UserSquare2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import '../styles/global.css';
 
 export default function Students() {
+  const navigate = useNavigate();
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -41,7 +43,7 @@ export default function Students() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [editStudent, setEditStudent] = useState(null);
   
-  const { currentUser, userRole, impersonate } = useAuth(); // Identificador del entrenador actual
+  const { currentUser, userRole, impersonate } = useAuth();
 
   const handleSaveMetrics = async (e) => {
     e.preventDefault();
@@ -81,14 +83,13 @@ export default function Students() {
 
   const fetchStudents = async () => {
     try {
-      // Filtrar los alumnos cuyo entrenador asignado sea el usuario actual
       const q = query(
         collection(db, "users"), 
         where("role", "==", "student"),
         where("trainerId", "==", currentUser.uid)
       );
       const querySnapshot = await getDocs(q);
-      const studentsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const studentsData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(s => s.status !== 'deleted');
       setStudents(studentsData);
     } catch (err) {
       console.error("Error fetching students:", err);
@@ -101,14 +102,13 @@ export default function Students() {
     e.preventDefault();
     setActionError('');
     try {
-      // Usar app secundaria para no desloguear al entrenador
       const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newStudent.email, newStudent.password);
       
-      // Guardar el perfil en Firestore con referencia al entrenador (trainerId)
       await setDoc(doc(db, "users", userCredential.user.uid), {
         email: newStudent.email,
         name: newStudent.name,
         role: 'student',
+        status: 'active',
         trainerId: currentUser.uid,
         trainingType: newStudent.trainingType,
         age: newStudent.age,
@@ -120,7 +120,6 @@ export default function Students() {
         createdAt: new Date().toISOString()
       });
 
-      // Si ingresó peso inicial, agregarlo al progreso automáticamente
       if (newStudent.weight) {
         await addDoc(collection(db, "progress_logs"), {
           studentId: userCredential.user.uid,
@@ -144,6 +143,17 @@ export default function Students() {
     } catch (err) {
       console.error("Error creating student:", err);
       setActionError(err.message);
+    }
+  };
+
+  const handleUpdateStatus = async (studentId, newStatus) => {
+    if (newStatus === 'deleted' && !window.confirm("¿Seguro que deseas eliminar a este alumno?")) return;
+    
+    try {
+      await updateDoc(doc(db, "users", studentId), { status: newStatus });
+      fetchStudents();
+    } catch (err) {
+      console.error("Error updating status:", err);
     }
   };
 
@@ -257,9 +267,10 @@ export default function Students() {
                 </div>
                 <div className="trainer-footer" style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
                   <span className="badge" style={{color: '#3b82f6', background: 'rgba(59, 130, 246, 0.1)'}}>Alumno</span>
-                  <span className="badge" style={{color: student.trainingType === 'remoto' ? '#a855f7' : '#10b981', background: student.trainingType === 'remoto' ? 'rgba(168, 85, 247, 0.1)' : 'rgba(16, 185, 129, 0.1)'}}>
-                    {student.trainingType === 'remoto' ? 'Remoto' : 'Presencial'}
+                  <span className={`badge ${student.status === 'suspended' ? 'suspended' : ''}`}>
+                    {student.status === 'suspended' ? 'Suspendido' : 'Activo'}
                   </span>
+                  <span className="date">Registrado el {new Date(student.createdAt).toLocaleDateString()}</span>
                   
                   <div className="student-actions">
                     <button className="btn-secondary" onClick={() => { setEditStudent(student); setShowProfileModal(true); }}>
@@ -278,17 +289,24 @@ export default function Students() {
                       <Activity size={16} style={{marginRight: '0.5rem'}} />
                       Medidas
                     </button>
-                    {(userRole === 'admin' || userRole === 'trainer') && (
-                      <button 
-                        className="btn-primary" 
-                        onClick={() => {
-                          impersonate(student);
-                          navigate('/');
-                        }}
-                        style={{ marginLeft: 'auto' }}
-                      >
-                        <UserSquare2 size={16} style={{marginRight: '0.5rem'}} />
-                        Entrar
+                    
+                    {userRole === 'admin' && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '1rem' }}>
+                        <button className="btn-secondary" onClick={() => { impersonate(student); navigate('/'); }}>Entrar</button>
+                        <button 
+                          className="btn-secondary" 
+                          style={{ color: student.status === 'suspended' ? 'var(--primary)' : 'var(--destructive)', borderColor: student.status === 'suspended' ? 'var(--primary)' : 'var(--destructive)' }}
+                          onClick={() => handleUpdateStatus(student.id, student.status === 'suspended' ? 'active' : 'suspended')}
+                        >
+                          {student.status === 'suspended' ? 'Activar' : 'Suspender'}
+                        </button>
+                        <button className="text-btn" style={{ gridColumn: 'span 2', color: 'var(--muted-foreground)', padding: '0.5rem' }} onClick={() => handleUpdateStatus(student.id, 'deleted')}>Eliminar</button>
+                      </div>
+                    )}
+
+                    {userRole === 'trainer' && (
+                      <button className="btn-secondary" style={{ width: '100%', marginTop: '0.5rem' }} onClick={() => { impersonate(student); navigate('/'); }}>
+                        Ver Panel del Alumno
                       </button>
                     )}
                   </div>
@@ -312,13 +330,7 @@ export default function Students() {
                 <div className="input-group">
                   <label>Nombre Completo</label>
                   <div className="input-with-icon">
-                    <input 
-                      type="text" 
-                      placeholder="Ej. Juan Pérez" 
-                      value={newStudent.name}
-                      onChange={(e) => setNewStudent({...newStudent, name: e.target.value})}
-                      required
-                    />
+                    <input type="text" placeholder="Ej. Juan Pérez" value={newStudent.name} onChange={(e) => setNewStudent({...newStudent, name: e.target.value})} required/>
                   </div>
                 </div>
 
@@ -326,13 +338,7 @@ export default function Students() {
                   <label>Correo Electrónico</label>
                   <div className="input-with-icon">
                     <Mail size={18} />
-                    <input 
-                      type="email" 
-                      placeholder="juan@ejemplo.com" 
-                      value={newStudent.email}
-                      onChange={(e) => setNewStudent({...newStudent, email: e.target.value})}
-                      required
-                    />
+                    <input type="email" placeholder="juan@ejemplo.com" value={newStudent.email} onChange={(e) => setNewStudent({...newStudent, email: e.target.value})} required/>
                   </div>
                 </div>
 
@@ -340,60 +346,34 @@ export default function Students() {
                   <label>Contraseña Inicial</label>
                   <div className="input-with-icon">
                     <Key size={18} />
-                    <input 
-                      type="password" 
-                      placeholder="Mínimo 6 caracteres" 
-                      value={newStudent.password}
-                      onChange={(e) => setNewStudent({...newStudent, password: e.target.value})}
-                      required
-                      minLength="6"
-                    />
+                    <input type="password" placeholder="Mínimo 6 caracteres" value={newStudent.password} onChange={(e) => setNewStudent({...newStudent, password: e.target.value})} required minLength="6"/>
                   </div>
                 </div>
 
                 <div className="input-group">
                   <label>Teléfono</label>
                   <div className="input-with-icon">
-                    <input 
-                      type="text" 
-                      placeholder="Ej. +34 600 000 000" 
-                      value={newStudent.phone}
-                      onChange={(e) => setNewStudent({...newStudent, phone: e.target.value})}
-                    />
+                    <input type="text" placeholder="Ej. +34 600 000 000" value={newStudent.phone} onChange={(e) => setNewStudent({...newStudent, phone: e.target.value})}/>
                   </div>
                 </div>
 
                 <div className="input-group" style={{ gridColumn: '1 / -1' }}>
                   <label>Dirección</label>
                   <div className="input-with-icon">
-                    <input 
-                      type="text" 
-                      placeholder="Ej. Calle Principal 123, Ciudad" 
-                      value={newStudent.address}
-                      onChange={(e) => setNewStudent({...newStudent, address: e.target.value})}
-                    />
+                    <input type="text" placeholder="Ej. Calle Principal 123, Ciudad" value={newStudent.address} onChange={(e) => setNewStudent({...newStudent, address: e.target.value})}/>
                   </div>
                 </div>
 
                 <div className="input-group">
                   <label>Edad</label>
                   <div className="input-with-icon">
-                    <input 
-                      type="number" 
-                      placeholder="Ej. 25" 
-                      value={newStudent.age}
-                      onChange={(e) => setNewStudent({...newStudent, age: e.target.value})}
-                    />
+                    <input type="number" placeholder="Ej. 25" value={newStudent.age} onChange={(e) => setNewStudent({...newStudent, age: e.target.value})}/>
                   </div>
                 </div>
 
                 <div className="input-group">
                   <label>Sexo</label>
-                  <select 
-                    value={newStudent.gender}
-                    onChange={(e) => setNewStudent({...newStudent, gender: e.target.value})}
-                    style={{ padding: '0.75rem', borderRadius: 'var(--radius)', background: 'rgba(255,255,255,0.05)', color: 'white', border: '1px solid var(--border)', width: '100%' }}
-                  >
+                  <select value={newStudent.gender} onChange={(e) => setNewStudent({...newStudent, gender: e.target.value})} style={{ padding: '0.75rem', borderRadius: 'var(--radius)', background: 'rgba(255,255,255,0.05)', color: 'white', border: '1px solid var(--border)', width: '100%' }}>
                     <option value="masculino">Masculino</option>
                     <option value="femenino">Femenino</option>
                     <option value="otro">Otro</option>
@@ -403,35 +383,20 @@ export default function Students() {
                 <div className="input-group">
                   <label>Estatura (cm)</label>
                   <div className="input-with-icon">
-                    <input 
-                      type="number" 
-                      placeholder="Ej. 175" 
-                      value={newStudent.height}
-                      onChange={(e) => setNewStudent({...newStudent, height: e.target.value})}
-                    />
+                    <input type="number" placeholder="Ej. 175" value={newStudent.height} onChange={(e) => setNewStudent({...newStudent, height: e.target.value})}/>
                   </div>
                 </div>
 
                 <div className="input-group">
                   <label>Peso Actual (kg)</label>
                   <div className="input-with-icon">
-                    <input 
-                      type="number"
-                      step="0.1" 
-                      placeholder="Ej. 75.5" 
-                      value={newStudent.weight}
-                      onChange={(e) => setNewStudent({...newStudent, weight: e.target.value})}
-                    />
+                    <input type="number" step="0.1" placeholder="Ej. 75.5" value={newStudent.weight} onChange={(e) => setNewStudent({...newStudent, weight: e.target.value})}/>
                   </div>
                 </div>
 
                 <div className="input-group" style={{ gridColumn: '1 / -1' }}>
                   <label>Modalidad de Entrenamiento</label>
-                  <select 
-                    value={newStudent.trainingType}
-                    onChange={(e) => setNewStudent({...newStudent, trainingType: e.target.value})}
-                    style={{ padding: '0.75rem', borderRadius: 'var(--radius)', background: 'rgba(255,255,255,0.05)', color: 'white', border: '1px solid var(--border)', width: '100%' }}
-                  >
+                  <select value={newStudent.trainingType} onChange={(e) => setNewStudent({...newStudent, trainingType: e.target.value})} style={{ padding: '0.75rem', borderRadius: 'var(--radius)', background: 'rgba(255,255,255,0.05)', color: 'white', border: '1px solid var(--border)', width: '100%' }}>
                     <option value="remoto">Remoto</option>
                     <option value="presencial">Presencial</option>
                   </select>
@@ -458,55 +423,34 @@ export default function Students() {
                 <div className="input-group">
                   <label>Nombre Completo</label>
                   <div className="input-with-icon">
-                    <input 
-                      type="text" 
-                      value={editStudent.name}
-                      onChange={(e) => setEditStudent({...editStudent, name: e.target.value})}
-                      required
-                    />
+                    <input type="text" value={editStudent.name} onChange={(e) => setEditStudent({...editStudent, name: e.target.value})} required/>
                   </div>
                 </div>
 
                 <div className="input-group">
                   <label>Teléfono</label>
                   <div className="input-with-icon">
-                    <input 
-                      type="text" 
-                      value={editStudent.phone || ''}
-                      onChange={(e) => setEditStudent({...editStudent, phone: e.target.value})}
-                    />
+                    <input type="text" value={editStudent.phone || ''} onChange={(e) => setEditStudent({...editStudent, phone: e.target.value})}/>
                   </div>
                 </div>
 
                 <div className="input-group" style={{ gridColumn: '1 / -1' }}>
                   <label>Dirección</label>
                   <div className="input-with-icon">
-                    <input 
-                      type="text" 
-                      value={editStudent.address || ''}
-                      onChange={(e) => setEditStudent({...editStudent, address: e.target.value})}
-                    />
+                    <input type="text" value={editStudent.address || ''} onChange={(e) => setEditStudent({...editStudent, address: e.target.value})}/>
                   </div>
                 </div>
 
                 <div className="input-group">
                   <label>Edad</label>
                   <div className="input-with-icon">
-                    <input 
-                      type="number" 
-                      value={editStudent.age || ''}
-                      onChange={(e) => setEditStudent({...editStudent, age: e.target.value})}
-                    />
+                    <input type="number" value={editStudent.age || ''} onChange={(e) => setEditStudent({...editStudent, age: e.target.value})}/>
                   </div>
                 </div>
 
                 <div className="input-group">
                   <label>Sexo</label>
-                  <select 
-                    value={editStudent.gender || 'masculino'}
-                    onChange={(e) => setEditStudent({...editStudent, gender: e.target.value})}
-                    style={{ padding: '0.75rem', borderRadius: 'var(--radius)', background: 'rgba(255,255,255,0.05)', color: 'white', border: '1px solid var(--border)', width: '100%' }}
-                  >
+                  <select value={editStudent.gender || 'masculino'} onChange={(e) => setEditStudent({...editStudent, gender: e.target.value})} style={{ padding: '0.75rem', borderRadius: 'var(--radius)', background: 'rgba(255,255,255,0.05)', color: 'white', border: '1px solid var(--border)', width: '100%' }}>
                     <option value="masculino">Masculino</option>
                     <option value="femenino">Femenino</option>
                     <option value="otro">Otro</option>
@@ -516,33 +460,20 @@ export default function Students() {
                 <div className="input-group">
                   <label>Estatura (cm)</label>
                   <div className="input-with-icon">
-                    <input 
-                      type="number" 
-                      value={editStudent.height || ''}
-                      onChange={(e) => setEditStudent({...editStudent, height: e.target.value})}
-                    />
+                    <input type="number" value={editStudent.height || ''} onChange={(e) => setEditStudent({...editStudent, height: e.target.value})}/>
                   </div>
                 </div>
 
                 <div className="input-group">
                   <label>Peso Actual (kg)</label>
                   <div className="input-with-icon">
-                    <input 
-                      type="number"
-                      step="0.1" 
-                      value={editStudent.weight || ''}
-                      onChange={(e) => setEditStudent({...editStudent, weight: e.target.value})}
-                    />
+                    <input type="number" step="0.1" value={editStudent.weight || ''} onChange={(e) => setEditStudent({...editStudent, weight: e.target.value})}/>
                   </div>
                 </div>
 
                 <div className="input-group" style={{ gridColumn: '1 / -1' }}>
                   <label>Modalidad</label>
-                  <select 
-                    value={editStudent.trainingType || 'remoto'}
-                    onChange={(e) => setEditStudent({...editStudent, trainingType: e.target.value})}
-                    style={{ padding: '0.75rem', borderRadius: 'var(--radius)', background: 'rgba(255,255,255,0.05)', color: 'white', border: '1px solid var(--border)', width: '100%' }}
-                  >
+                  <select value={editStudent.trainingType || 'remoto'} onChange={(e) => setEditStudent({...editStudent, trainingType: e.target.value})} style={{ padding: '0.75rem', borderRadius: 'var(--radius)', background: 'rgba(255,255,255,0.05)', color: 'white', border: '1px solid var(--border)', width: '100%' }}>
                     <option value="remoto">Remoto</option>
                     <option value="presencial">Presencial</option>
                   </select>
@@ -573,26 +504,14 @@ export default function Students() {
               <div className="input-group">
                 <label>Peso Corporal (kg)</label>
                 <div className="input-with-icon">
-                  <input 
-                    type="number" 
-                    step="0.1"
-                    placeholder="Ej. 75.5" 
-                    value={metricData.weight}
-                    onChange={(e) => setMetricData({...metricData, weight: e.target.value})}
-                  />
+                  <input type="number" step="0.1" placeholder="Ej. 75.5" value={metricData.weight} onChange={(e) => setMetricData({...metricData, weight: e.target.value})}/>
                 </div>
               </div>
 
               <div className="input-group">
                 <label>Porcentaje de Grasa (%)</label>
                 <div className="input-with-icon">
-                  <input 
-                    type="number" 
-                    step="0.1"
-                    placeholder="Ej. 15.2" 
-                    value={metricData.fat}
-                    onChange={(e) => setMetricData({...metricData, fat: e.target.value})}
-                  />
+                  <input type="number" step="0.1" placeholder="Ej. 15.2" value={metricData.fat} onChange={(e) => setMetricData({...metricData, fat: e.target.value})}/>
                 </div>
               </div>
 
@@ -731,7 +650,26 @@ export default function Students() {
       )}
 
       <style>{`
-        /* Reutiliza estilos de Trainers.jsx */
+        .date {
+          font-size: 0.8rem;
+          color: var(--muted-foreground);
+        }
+
+        .badge.suspended {
+          background: rgba(239, 68, 68, 0.1);
+          color: var(--destructive);
+        }
+
+        .text-btn {
+          background: transparent;
+          border: none;
+          cursor: pointer;
+        }
+
+        .text-btn:hover {
+          color: var(--destructive) !important;
+        }
+
         .btn-text {
           background: transparent;
           border: none;
