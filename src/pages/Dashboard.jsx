@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Activity, TrendingUp, Dumbbell, ClipboardList, CheckCircle, Scale, Droplets } from 'lucide-react';
+import { Users, Activity, TrendingUp, Dumbbell, ClipboardList, CheckCircle, Scale, Droplets, Sparkles, TrendingDown, Minus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -14,6 +14,7 @@ export default function Dashboard() {
   const [workouts, setWorkouts] = useState([]);
   const [exercisesLib, setExercisesLib] = useState({});
   const [studentStats, setStudentStats] = useState({ weight: '-', fat: '-', rms: 0 });
+  const [insights, setInsights] = useState([]);
 
   // UI state
   const [selectedExercise, setSelectedExercise] = useState('');
@@ -67,6 +68,70 @@ export default function Dashboard() {
               fat: lastFat ? `${lastFat.value} %` : '-',
               rms: rms.length
             });
+
+            // --- Generate Insights ---
+            const newInsights = [];
+
+            // 1. Analyze RMs (Evolución de Fuerza)
+            const rmByExercise = {};
+            rms.forEach(log => {
+              if (!rmByExercise[log.exerciseOrBodyPart]) rmByExercise[log.exerciseOrBodyPart] = [];
+              rmByExercise[log.exerciseOrBodyPart].push(log);
+            });
+
+            Object.entries(rmByExercise).forEach(([exercise, exerciseLogs]) => {
+              if (exerciseLogs.length >= 2) {
+                const prev = exerciseLogs[exerciseLogs.length - 2];
+                const last = exerciseLogs[exerciseLogs.length - 1];
+                const prevVal = parseFloat(prev.value);
+                const lastVal = parseFloat(last.value);
+                const diff = (lastVal - prevVal).toFixed(1);
+
+                if (diff > 0) {
+                  newInsights.push({ type: 'positive', text: `¡Aumentaste ${diff}kg en ${exercise}! Pasaste de ${prevVal}kg a ${lastVal}kg.` });
+                } else if (diff < 0) {
+                  newInsights.push({ type: 'negative', text: `Tu RM en ${exercise} bajó ${Math.abs(diff)}kg (de ${prevVal}kg a ${lastVal}kg).` });
+                }
+              }
+            });
+
+            // 2. Analyze Weight
+            const weights = metrics.filter(m => m.metric === 'Peso Corporal');
+            if (weights.length >= 2) {
+              const prev = weights[weights.length - 2];
+              const last = weights[weights.length - 1];
+              const prevVal = parseFloat(prev.value);
+              const lastVal = parseFloat(last.value);
+              const diff = (lastVal - prevVal).toFixed(1);
+
+              if (diff < 0) {
+                 newInsights.push({ type: 'positive', text: `Has bajado ${Math.abs(diff)}kg de peso corporal. ¡Excelente trabajo!` });
+              } else if (diff > 0) {
+                 newInsights.push({ type: 'neutral', text: `Tu peso corporal aumentó ${diff}kg desde tu última medición.` });
+              }
+            }
+
+            // 3. Analyze Fat
+            const fats = metrics.filter(m => m.metric === '% Grasa');
+            if (fats.length >= 2) {
+              const prev = fats[fats.length - 2];
+              const last = fats[fats.length - 1];
+              const prevVal = parseFloat(prev.value);
+              const lastVal = parseFloat(last.value);
+              const diff = (lastVal - prevVal).toFixed(1);
+
+              if (diff < 0) {
+                 newInsights.push({ type: 'positive', text: `Has reducido ${Math.abs(diff)}% de grasa corporal. ¡Sigue así!` });
+              } else if (diff > 0) {
+                 newInsights.push({ type: 'neutral', text: `Tu porcentaje de grasa subió un ${diff}%.` });
+              }
+            }
+
+            if (newInsights.length === 0) {
+              newInsights.push({ type: 'neutral', text: `Sigue registrando tus RMs y medidas corporales para generar análisis automáticos de tu progreso.` });
+            }
+
+            setInsights(newInsights.reverse().slice(0, 4));
           }
           
           if (rms.length > 0) {
@@ -201,6 +266,31 @@ export default function Dashboard() {
           </div>
         ))}
       </div>
+
+      {userRole === 'student' && (
+        <div className="panel glass" style={{ marginBottom: '1rem', border: '1px solid rgba(168, 85, 247, 0.3)', background: 'linear-gradient(to right, rgba(0,0,0,0.6), rgba(168, 85, 247, 0.05))' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
+            <Sparkles size={24} color="#a855f7" />
+            <h3 style={{ margin: 0, color: '#a855f7' }}>Análisis Inteligente</h3>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            {insights.map((insight, idx) => (
+              <div key={idx} style={{ 
+                display: 'flex', alignItems: 'flex-start', gap: '0.75rem', 
+                background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: 'var(--radius)',
+                borderLeft: `4px solid ${insight.type === 'positive' ? '#10b981' : insight.type === 'negative' ? '#ef4444' : '#3b82f6'}`
+              }}>
+                <div style={{ marginTop: '2px' }}>
+                  {insight.type === 'positive' && <TrendingUp size={18} color="#10b981" />}
+                  {insight.type === 'negative' && <TrendingDown size={18} color="#ef4444" />}
+                  {insight.type === 'neutral' && <Minus size={18} color="#3b82f6" />}
+                </div>
+                <p style={{ margin: 0, fontSize: '0.95rem', lineHeight: '1.4' }}>{insight.text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {userRole === 'admin' && (
         <button 
