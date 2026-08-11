@@ -21,6 +21,7 @@ export default function StudentWorkouts() {
   const [routineExercises, setRoutineExercises] = useState([]);
   const [showCreateExerciseModal, setShowCreateExerciseModal] = useState(false);
   const [newExercise, setNewExercise] = useState({ name: '', targetMuscle: 'Pecho', description: '', imageUrl: '' });
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
 
   useEffect(() => {
     if (currentUser) fetchWorkouts();
@@ -96,8 +97,8 @@ export default function StudentWorkouts() {
       await addDoc(collection(db, "workouts"), {
         studentId: currentUser.uid,
         trainerId: currentUser.uid,
-        date: new Date().toISOString().split('T')[0],
-        name: routineName || `Entrenamiento Libre - ${new Date().toLocaleDateString('es-ES')}`,
+        date: selectedDate,
+        name: routineName || `Entrenamiento Libre - ${new Date(selectedDate + 'T12:00:00Z').toLocaleDateString('es-ES')}`,
         exercises: routineExercises,
         createdAt: new Date().toISOString()
       });
@@ -307,18 +308,31 @@ export default function StudentWorkouts() {
         <div className="modal-overlay">
           <div className="modal glass" style={{maxWidth: '600px', maxHeight: '90vh', overflowY: 'auto'}}>
             <h2>Entrenamiento Libre</h2>
-            <p className="modal-subtitle">Crea una rutina rápida para entrenar ahora mismo.</p>
+            <p className="modal-subtitle">Crea una rutina rápida para entrenar ahora mismo o registrar un día pasado.</p>
             <form onSubmit={handleCreateLiveWorkout} className="modal-form">
               
-              <div className="input-group">
-                <label>Nombre (Opcional)</label>
-                <input 
-                  type="text" 
-                  className="input-field"
-                  placeholder={`Ej. Entrenamiento Libre - ${new Date().toLocaleDateString('es-ES')}`}
-                  value={routineName}
-                  onChange={(e) => setRoutineName(e.target.value)}
-                />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="input-group">
+                  <label>Fecha</label>
+                  <input 
+                    type="date" 
+                    className="input-field"
+                    value={selectedDate}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="input-group">
+                  <label>Nombre (Opcional)</label>
+                  <input 
+                    type="text" 
+                    className="input-field"
+                    placeholder={`Libre`}
+                    value={routineName}
+                    onChange={(e) => setRoutineName(e.target.value)}
+                  />
+                </div>
               </div>
 
               <hr style={{ borderColor: 'var(--border)', margin: '1rem 0' }} />
