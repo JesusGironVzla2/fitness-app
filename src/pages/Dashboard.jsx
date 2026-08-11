@@ -47,92 +47,91 @@ export default function Dashboard() {
           const metrics = logs.filter(l => l.type === 'Medida');
           setMetricLogs(metrics);
 
-          if (userRole === 'student') {
-            const qW = query(collection(db, "workouts"), where("studentId", "==", currentUser.uid));
-            const snapW = await getDocs(qW);
-            setWorkouts(snapW.docs.map(d => d.data()));
+          // We want to fetch personal workout data for everyone, not just students.
+          const qW = query(collection(db, "workouts"), where("studentId", "==", currentUser.uid));
+          const snapW = await getDocs(qW);
+          setWorkouts(snapW.docs.map(d => d.data()));
 
-            const qE = query(collection(db, "exercises"));
-            const snapE = await getDocs(qE);
-            const exMap = {};
-            snapE.docs.forEach(doc => {
-              exMap[doc.id] = doc.data().muscle;
-            });
-            setExercisesLib(exMap);
-            
-            const lastWeight = metrics.filter(m => m.metric === 'Peso Corporal').pop();
-            const lastFat = metrics.filter(m => m.metric === '% Grasa').pop();
-            
-            setStudentStats({
-              weight: lastWeight ? `${lastWeight.value} kg` : '-',
-              fat: lastFat ? `${lastFat.value} %` : '-',
-              rms: rms.length
-            });
+          const qE = query(collection(db, "exercises"));
+          const snapE = await getDocs(qE);
+          const exMap = {};
+          snapE.docs.forEach(doc => {
+            exMap[doc.id] = doc.data().muscle;
+          });
+          setExercisesLib(exMap);
+          
+          const lastWeight = metrics.filter(m => m.metric === 'Peso Corporal').pop();
+          const lastFat = metrics.filter(m => m.metric === '% Grasa').pop();
+          
+          setStudentStats({
+            weight: lastWeight ? `${lastWeight.value} kg` : '-',
+            fat: lastFat ? `${lastFat.value} %` : '-',
+            rms: rms.length
+          });
 
-            // --- Generate Insights ---
-            const newInsights = [];
+          // --- Generate Insights ---
+          const newInsights = [];
 
-            // 1. Analyze RMs (Evolución de Fuerza)
-            const rmByExercise = {};
-            rms.forEach(log => {
-              if (!rmByExercise[log.exerciseOrBodyPart]) rmByExercise[log.exerciseOrBodyPart] = [];
-              rmByExercise[log.exerciseOrBodyPart].push(log);
-            });
+          // 1. Analyze RMs (Evolución de Fuerza)
+          const rmByExercise = {};
+          rms.forEach(log => {
+            if (!rmByExercise[log.exerciseOrBodyPart]) rmByExercise[log.exerciseOrBodyPart] = [];
+            rmByExercise[log.exerciseOrBodyPart].push(log);
+          });
 
-            Object.entries(rmByExercise).forEach(([exercise, exerciseLogs]) => {
-              if (exerciseLogs.length >= 2) {
-                const prev = exerciseLogs[exerciseLogs.length - 2];
-                const last = exerciseLogs[exerciseLogs.length - 1];
-                const prevVal = parseFloat(prev.value);
-                const lastVal = parseFloat(last.value);
-                const diff = (lastVal - prevVal).toFixed(1);
-
-                if (diff > 0) {
-                  newInsights.push({ type: 'positive', text: `¡Aumentaste ${diff}kg en ${exercise}! Pasaste de ${prevVal}kg a ${lastVal}kg.` });
-                } else if (diff < 0) {
-                  newInsights.push({ type: 'negative', text: `Tu RM en ${exercise} bajó ${Math.abs(diff)}kg (de ${prevVal}kg a ${lastVal}kg).` });
-                }
-              }
-            });
-
-            // 2. Analyze Weight
-            const weights = metrics.filter(m => m.metric === 'Peso Corporal');
-            if (weights.length >= 2) {
-              const prev = weights[weights.length - 2];
-              const last = weights[weights.length - 1];
+          Object.entries(rmByExercise).forEach(([exercise, exerciseLogs]) => {
+            if (exerciseLogs.length >= 2) {
+              const prev = exerciseLogs[exerciseLogs.length - 2];
+              const last = exerciseLogs[exerciseLogs.length - 1];
               const prevVal = parseFloat(prev.value);
               const lastVal = parseFloat(last.value);
               const diff = (lastVal - prevVal).toFixed(1);
 
-              if (diff < 0) {
-                 newInsights.push({ type: 'positive', text: `Has bajado ${Math.abs(diff)}kg de peso corporal. ¡Excelente trabajo!` });
-              } else if (diff > 0) {
-                 newInsights.push({ type: 'neutral', text: `Tu peso corporal aumentó ${diff}kg desde tu última medición.` });
+              if (diff > 0) {
+                newInsights.push({ type: 'positive', text: `¡Aumentaste ${diff}kg en ${exercise}! Pasaste de ${prevVal}kg a ${lastVal}kg.` });
+              } else if (diff < 0) {
+                newInsights.push({ type: 'negative', text: `Tu RM en ${exercise} bajó ${Math.abs(diff)}kg (de ${prevVal}kg a ${lastVal}kg).` });
               }
             }
+          });
 
-            // 3. Analyze Fat
-            const fats = metrics.filter(m => m.metric === '% Grasa');
-            if (fats.length >= 2) {
-              const prev = fats[fats.length - 2];
-              const last = fats[fats.length - 1];
-              const prevVal = parseFloat(prev.value);
-              const lastVal = parseFloat(last.value);
-              const diff = (lastVal - prevVal).toFixed(1);
+          // 2. Analyze Weight
+          const weights = metrics.filter(m => m.metric === 'Peso Corporal');
+          if (weights.length >= 2) {
+            const prev = weights[weights.length - 2];
+            const last = weights[weights.length - 1];
+            const prevVal = parseFloat(prev.value);
+            const lastVal = parseFloat(last.value);
+            const diff = (lastVal - prevVal).toFixed(1);
 
-              if (diff < 0) {
-                 newInsights.push({ type: 'positive', text: `Has reducido ${Math.abs(diff)}% de grasa corporal. ¡Sigue así!` });
-              } else if (diff > 0) {
-                 newInsights.push({ type: 'neutral', text: `Tu porcentaje de grasa subió un ${diff}%.` });
-              }
+            if (diff < 0) {
+               newInsights.push({ type: 'positive', text: `Has bajado ${Math.abs(diff)}kg de peso corporal. ¡Excelente trabajo!` });
+            } else if (diff > 0) {
+               newInsights.push({ type: 'neutral', text: `Tu peso corporal aumentó ${diff}kg desde tu última medición.` });
             }
-
-            if (newInsights.length === 0) {
-              newInsights.push({ type: 'neutral', text: `Sigue registrando tus RMs y medidas corporales para generar análisis automáticos de tu progreso.` });
-            }
-
-            setInsights(newInsights.reverse().slice(0, 4));
           }
+
+          // 3. Analyze Fat
+          const fats = metrics.filter(m => m.metric === '% Grasa');
+          if (fats.length >= 2) {
+            const prev = fats[fats.length - 2];
+            const last = fats[fats.length - 1];
+            const prevVal = parseFloat(prev.value);
+            const lastVal = parseFloat(last.value);
+            const diff = (lastVal - prevVal).toFixed(1);
+
+            if (diff < 0) {
+               newInsights.push({ type: 'positive', text: `Has reducido ${Math.abs(diff)}% de grasa corporal. ¡Sigue así!` });
+            } else if (diff > 0) {
+               newInsights.push({ type: 'neutral', text: `Tu porcentaje de grasa subió un ${diff}%.` });
+            }
+          }
+
+          if (newInsights.length === 0) {
+            newInsights.push({ type: 'neutral', text: `Sigue registrando tus RMs y medidas corporales para generar análisis automáticos de tu progreso.` });
+          }
+
+          setInsights(newInsights.reverse().slice(0, 4));
           
           if (rms.length > 0) {
             const uniqueExercises = [...new Set(rms.map(l => l.exerciseOrBodyPart))];
@@ -253,44 +252,28 @@ export default function Dashboard() {
         <p>{userRole === 'trainer' ? 'Métricas de tus alumnos y rendimiento.' : userRole === 'student' ? 'Revisa tu evolución de fuerza y medidas corporales.' : 'Estadísticas y actividad reciente de la plataforma.'}</p>
       </div>
 
-      <div className="stats-grid">
-        {displayStats.map((stat, i) => (
-          <div key={i} className="stat-card glass" style={{ animationDelay: `${i * 0.1}s` }}>
-            <div className="stat-icon" style={{ backgroundColor: `${stat.color}15`, color: stat.color }}>
-              <stat.icon size={24} />
-            </div>
-            <div className="stat-info">
-              <h3>{stat.value}</h3>
-              <p>{stat.title}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {userRole === 'student' && (
-        <div className="panel glass" style={{ marginBottom: '1rem', border: '1px solid rgba(168, 85, 247, 0.3)', background: 'linear-gradient(to right, rgba(0,0,0,0.6), rgba(168, 85, 247, 0.05))' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
-            <Sparkles size={24} color="#a855f7" />
-            <h3 style={{ margin: 0, color: '#a855f7' }}>Análisis Inteligente</h3>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {insights.map((insight, idx) => (
-              <div key={idx} style={{ 
-                display: 'flex', alignItems: 'flex-start', gap: '0.75rem', 
-                background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: 'var(--radius)',
-                borderLeft: `4px solid ${insight.type === 'positive' ? '#10b981' : insight.type === 'negative' ? '#ef4444' : '#3b82f6'}`
-              }}>
-                <div style={{ marginTop: '2px' }}>
-                  {insight.type === 'positive' && <TrendingUp size={18} color="#10b981" />}
-                  {insight.type === 'negative' && <TrendingDown size={18} color="#ef4444" />}
-                  {insight.type === 'neutral' && <Minus size={18} color="#3b82f6" />}
+      {userRole !== 'student' && (
+        <>
+          <h2 style={{ marginTop: '1rem', fontSize: '1.25rem' }}>Estadísticas de la Plataforma</h2>
+          <div className="stats-grid">
+            {displayStats.map((stat, i) => (
+              <div key={i} className="stat-card glass" style={{ animationDelay: `${i * 0.1}s` }}>
+                <div className="stat-icon" style={{ backgroundColor: `${stat.color}15`, color: stat.color }}>
+                  <stat.icon size={24} />
                 </div>
-                <p style={{ margin: 0, fontSize: '0.95rem', lineHeight: '1.4' }}>{insight.text}</p>
+                <div className="stat-info">
+                  <h3>{stat.value}</h3>
+                  <p>{stat.title}</p>
+                </div>
               </div>
             ))}
           </div>
-        </div>
+        </>
       )}
+
+      <div style={{ marginTop: '1rem' }}>
+        <h2 style={{ fontSize: '1.25rem', marginBottom: '1rem' }}>Mi Entrenamiento Personal</h2>
+      </div>
 
       {userRole === 'admin' && (
         <button 
@@ -340,22 +323,42 @@ export default function Dashboard() {
         </button>
       )}
 
-      <div className="dashboard-content" style={{ gridTemplateColumns: userRole === 'student' ? '2fr 1fr' : '2fr 1fr' }}>
+      {/* Insights Panel for all users */}
+      <div className="panel glass" style={{ marginBottom: '1rem', border: '1px solid rgba(168, 85, 247, 0.3)', background: 'linear-gradient(to right, rgba(0,0,0,0.6), rgba(168, 85, 247, 0.05))' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
+          <Sparkles size={24} color="#a855f7" />
+          <h3 style={{ margin: 0, color: '#a855f7' }}>Análisis Inteligente</h3>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          {insights.map((insight, idx) => (
+            <div key={idx} style={{ 
+              display: 'flex', alignItems: 'flex-start', gap: '0.75rem', 
+              background: 'rgba(255,255,255,0.03)', padding: '1rem', borderRadius: 'var(--radius)',
+              borderLeft: `4px solid ${insight.type === 'positive' ? '#10b981' : insight.type === 'negative' ? '#ef4444' : '#3b82f6'}`
+            }}>
+              <div style={{ marginTop: '2px' }}>
+                {insight.type === 'positive' && <TrendingUp size={18} color="#10b981" />}
+                {insight.type === 'negative' && <TrendingDown size={18} color="#ef4444" />}
+                {insight.type === 'neutral' && <Minus size={18} color="#3b82f6" />}
+              </div>
+              <p style={{ margin: 0, fontSize: '0.95rem', lineHeight: '1.4' }}>{insight.text}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="dashboard-content">
         <div className="panel glass chart-panel">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            {userRole === 'student' ? (
-              <select 
-                value={chartMode} 
-                onChange={(e) => setChartMode(e.target.value)}
-                style={{ background: 'transparent', color: 'white', border: 'none', fontSize: '1.25rem', fontWeight: 'bold', outline: 'none', cursor: 'pointer' }}
-              >
-                <option value="rm" style={{background: 'var(--background)'}}>Evolución de Fuerza (RM)</option>
-                <option value="weight" style={{background: 'var(--background)'}}>Evolución de Peso Corporal</option>
-                <option value="fat" style={{background: 'var(--background)'}}>Evolución de % Grasa</option>
-              </select>
-            ) : (
-              <h3>Evolución de Fuerza (RM)</h3>
-            )}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+            <select 
+              value={chartMode} 
+              onChange={(e) => setChartMode(e.target.value)}
+              style={{ background: 'transparent', color: 'white', border: 'none', fontSize: '1.25rem', fontWeight: 'bold', outline: 'none', cursor: 'pointer', flex: 1, minWidth: '200px' }}
+            >
+              <option value="rm" style={{background: 'var(--background)'}}>Evolución de Fuerza (RM)</option>
+              <option value="weight" style={{background: 'var(--background)'}}>Evolución de Peso Corporal</option>
+              <option value="fat" style={{background: 'var(--background)'}}>Evolución de % Grasa</option>
+            </select>
             
             {chartMode === 'rm' && uniqueExercises.length > 0 && (
               <select 
@@ -385,33 +388,11 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {userRole === 'student' ? (
-          <div className="panel glass">
-            <h3>Trabajo por Músculos</h3>
-            <p style={{fontSize: '0.85rem', color: 'var(--muted-foreground)'}}>Frecuencia de entrenamiento por grupo muscular.</p>
-            {renderMuscleBreakdown()}
-          </div>
-        ) : (
-          <div className="panel glass">
-            <h3>{userRole === 'trainer' ? 'Alumnos Destacados' : 'Últimos Entrenadores'}</h3>
-            <ul className="recent-list">
-              {[1, 2, 3, 4].map((item) => (
-                <li key={item} className="recent-item">
-                  <div className="recent-avatar" style={{ backgroundColor: userRole === 'trainer' ? '#3b82f622' : 'var(--secondary)', color: userRole === 'trainer' ? '#3b82f6' : 'var(--muted-foreground)' }}>
-                    {userRole === 'trainer' ? 'A' : 'E'}{item}
-                  </div>
-                  <div className="recent-info">
-                    <h4>{userRole === 'trainer' ? `Alumno ${item}` : `Entrenador ${item}`}</h4>
-                    <p>{userRole === 'trainer' ? 'Progreso excelente' : `entrenador${item}@fitpro.com`}</p>
-                  </div>
-                  <span className="badge" style={{ color: userRole === 'trainer' ? '#3b82f6' : '#10b981', background: userRole === 'trainer' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(16, 185, 129, 0.1)' }}>
-                    {userRole === 'trainer' ? 'Activo' : 'Activo'}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        <div className="panel glass">
+          <h3>Trabajo por Músculos</h3>
+          <p style={{fontSize: '0.85rem', color: 'var(--muted-foreground)'}}>Frecuencia de entrenamiento por grupo muscular.</p>
+          {renderMuscleBreakdown()}
+        </div>
       </div>
 
       <style>{`
