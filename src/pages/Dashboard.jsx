@@ -5,7 +5,6 @@ import { useAuth } from '../context/AuthContext';
 import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { ResponsiveContainer, AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, Legend } from 'recharts';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -97,30 +96,45 @@ export default function Dashboard() {
 
   const generateInsights = async (rms, metrics) => {
     const weights = metrics.filter(m => m.metric === 'Peso Corporal');
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY || import.meta.env.VITE_GEMINI_API_KEY;
 
     if (apiKey && apiKey.length > 10) {
       try {
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash", generationConfig: { responseMimeType: "application/json" } });
-        
-        // Compact the data to save tokens
         const summaryRMs = rms.map(r => ({ e: r.exerciseOrBodyPart, v: r.value, d: new Date(r.createdAt).toLocaleDateString() })).slice(-20);
         const summaryWeights = weights.map(w => ({ v: w.value, d: new Date(w.createdAt).toLocaleDateString() })).slice(-10);
 
-        const prompt = `
-          Actúa como un entrenador personal analítico. Evalúa los siguientes datos de entrenamiento.
-          Identifica logros o áreas de mejora de forma concisa, directa y motivadora (máx 1 oración por punto).
-          Devuelve un JSON exacto con un array de 3 objetos: [{"type": "positive" | "negative" | "neutral", "text": "string"}].
-          RMs: ${JSON.stringify(summaryRMs)}
-          Peso Corporal: ${JSON.stringify(summaryWeights)}
-        `;
+        const systemPrompt = `Actúa como un entrenador personal analítico. Evalúa los siguientes datos de entrenamiento.
+Identifica logros o áreas de mejora de forma concisa, directa y motivadora (máx 1 oración por punto).
+Devuelve un JSON exacto con un array de 3 objetos: [{"type": "positive" | "negative" | "neutral", "text": "string"}].
+RMs: ${JSON.stringify(summaryRMs)}
+Peso Corporal: ${JSON.stringify(summaryWeights)}`;
 
-        const result = await model.generateContent(prompt);
-        const responseText = result.response.text();
-        return JSON.parse(responseText);
+        const responseAPI = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${apiKey}`,
+            "HTTP-Referer": "https://coachnode.vercel.app",
+            "X-Title": "CoachNode",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            model: "meta-llama/llama-3.1-8b-instruct:free",
+            response_format: { type: "json_object" },
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: "Genera los insights." }
+            ]
+          })
+        });
+
+        if (responseAPI.ok) {
+          const data = await responseAPI.json();
+          let text = data.choices[0].message.content;
+          text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+          return JSON.parse(text);
+        }
       } catch (error) {
-        console.error("Gemini Error:", error);
+        console.error("OpenRouter Error:", error);
       }
     }
 

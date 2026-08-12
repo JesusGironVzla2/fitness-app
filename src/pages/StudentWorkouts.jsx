@@ -227,12 +227,7 @@ export default function StudentWorkouts() {
     
     setIsGenerating(true);
     try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) {
-        alert("API Key de Gemini no encontrada. Configúrala en .env");
-        setIsGenerating(false);
-        return;
-      }
+
       
       // Fetch exercises if not loaded
       let currentExercises = exercises;
