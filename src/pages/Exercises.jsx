@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
-import { Dumbbell, Plus, TrendingUp } from 'lucide-react';
+import { Dumbbell, Plus, TrendingUp, Sparkles } from 'lucide-react';
 import '../styles/global.css';
 
 export default function Exercises() {
@@ -72,6 +72,27 @@ export default function Exercises() {
     }
   };
 
+  const handleSeedDatabase = async () => {
+    const defaultExercises = [
+      { name: 'Jalón al pecho', targetMuscle: 'Espalda', description: 'Tira de la barra hacia tu pecho superior, manteniendo la espalda recta.', imageUrl: 'https://media.tenor.com/7H-v500c2A8AAAAC/lat-pulldown-exercise.gif' },
+      { name: 'Remo con barra', targetMuscle: 'Espalda', description: 'Inclinado hacia adelante, tira de la barra hacia tu abdomen.', imageUrl: 'https://media.tenor.com/O61G9v9b2eAAAAAC/bent-over-row.gif' },
+      { name: 'Press de Banca', targetMuscle: 'Pecho', description: 'Baja la barra hasta el pecho y empuja hacia arriba.', imageUrl: 'https://media.tenor.com/E8e9mE7N9h8AAAAC/bench-press.gif' },
+      { name: 'Sentadilla con barra', targetMuscle: 'Piernas', description: 'Baja como si fueras a sentarte en una silla, manteniendo la espalda recta.', imageUrl: 'https://media.tenor.com/QhT83Dk0mBIAAAAC/squats-workout.gif' },
+      { name: 'Curl de Bíceps', targetMuscle: 'Bíceps', description: 'Flexiona los codos llevando la barra o mancuernas hacia los hombros.', imageUrl: 'https://media.tenor.com/a9c1B-Y6uDkAAAAC/biceps-curl.gif' }
+    ];
+
+    setLoading(true);
+    for (const ex of defaultExercises) {
+      // Check if it exists to avoid duplicates
+      const exists = exercises.some(e => e.name.toLowerCase() === ex.name.toLowerCase());
+      if (!exists) {
+        await addDoc(collection(db, "exercises"), { ...ex, createdAt: new Date().toISOString() });
+      }
+    }
+    await fetchExercises();
+    alert("¡Ejercicios de prueba cargados con éxito!");
+  };
+
   const muscleGroups = ['Todos', 'Pecho', 'Espalda', 'Piernas', 'Hombro', 'Bíceps', 'Tríceps', 'Abdomen'];
   const filteredExercises = filterMuscle === 'Todos' 
     ? exercises 
@@ -84,10 +105,20 @@ export default function Exercises() {
           <h1>Biblioteca de Ejercicios</h1>
           <p>Base de datos global de ejercicios para asignar a los alumnos.</p>
         </div>
-        <button className="btn-primary" onClick={() => setShowModal(true)}>
-          <Plus size={20} />
-          <span>Nuevo Ejercicio</span>
-        </button>
+        <div style={{ display: 'flex', gap: '1rem' }}>
+          <button 
+            className="btn-secondary" 
+            style={{ border: '1px solid #ec4899', color: '#ec4899', background: 'rgba(236, 72, 153, 0.1)' }}
+            onClick={handleSeedDatabase}
+          >
+            <Sparkles size={20} />
+            <span>Cargar GIFs de Prueba</span>
+          </button>
+          <button className="btn-primary" onClick={() => setShowModal(true)}>
+            <Plus size={20} />
+            <span>Nuevo Ejercicio</span>
+          </button>
+        </div>
       </div>
 
       <div className="filters-container" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
