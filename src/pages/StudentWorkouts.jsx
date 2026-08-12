@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, updateDoc, doc, addDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
-import { Calendar, CheckCircle, MessageSquare, Plus, Dumbbell, ChevronLeft, ChevronRight, Timer, X, Sparkles } from 'lucide-react';
+import { Calendar, CheckCircle, MessageSquare, Plus, Dumbbell, ChevronLeft, ChevronRight, Timer, X, Sparkles, Share2, Instagram } from 'lucide-react';
 import { getDoc } from 'firebase/firestore';
+import html2canvas from 'html2canvas';
 import '../styles/global.css';
 
 export default function StudentWorkouts() {
@@ -43,6 +44,10 @@ export default function StudentWorkouts() {
   // Calendar states
   const [calendarMonth, setCalendarMonth] = useState(new Date());
   const [calendarSelectedDate, setCalendarSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+
+  // Social Share State
+  const [shareRoutine, setShareRoutine] = useState(null);
+  const [isCapturing, setIsCapturing] = useState(false);
 
   useEffect(() => {
     if (currentUser) fetchWorkouts();
@@ -414,10 +419,104 @@ Formato requerido:
     if (dayCounter > daysInMonth) break;
   }
   
-  const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+  const handleShareToInstagram = async () => {
+    setIsCapturing(true);
+    const element = document.getElementById('share-card-content');
+    if (element) {
+      try {
+        const canvas = await html2canvas(element, { scale: 3, backgroundColor: '#000000' });
+        const dataUrl = canvas.toDataURL('image/png');
+        
+        // Try Web Share API (Mobile)
+        if (navigator.share) {
+          const blob = await (await fetch(dataUrl)).blob();
+          const file = new File([blob], 'coachnode-workout.png', { type: 'image/png' });
+          await navigator.share({
+            title: 'Mi Entrenamiento',
+            text: '¡Mira mi entrenamiento en CoachNode! 💪🔥',
+            files: [file]
+          }).catch(console.error);
+        } else {
+          // Fallback to Download
+          const link = document.createElement('a');
+          link.download = 'coachnode-workout.png';
+          link.href = dataUrl;
+          link.click();
+        }
+      } catch (e) {
+        console.error("Error capturing image", e);
+      }
+    }
+    setIsCapturing(false);
+  };
 
   return (
     <div className="workouts-page" style={{ position: 'relative' }}>
+      
+      {/* Social Share Modal */}
+      {shareRoutine && (
+        <div className="modal-overlay" style={{ zIndex: 100 }}>
+          <div className="modal glass" style={{ maxWidth: '400px', width: '100%', padding: '2rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <h2 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Instagram color="#ec4899" /> Compartir Logro</h2>
+            
+            {/* Elemento a capturar */}
+            <div 
+              id="share-card-content" 
+              style={{ 
+                width: '300px', 
+                height: '533px', // 9:16 approx
+                background: 'linear-gradient(135deg, #111 0%, #1e1b4b 100%)', 
+                borderRadius: '1rem', 
+                padding: '2rem',
+                display: 'flex',
+                flexDirection: 'column',
+                boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                color: 'white',
+                position: 'relative',
+                overflow: 'hidden'
+              }}
+            >
+              <div style={{ position: 'absolute', top: -50, right: -50, width: 150, height: 150, background: 'rgba(168, 85, 247, 0.4)', filter: 'blur(40px)', borderRadius: '50%' }} />
+              <div style={{ position: 'absolute', bottom: -50, left: -50, width: 150, height: 150, background: 'rgba(59, 130, 246, 0.4)', filter: 'blur(40px)', borderRadius: '50%' }} />
+              
+              <div style={{ zIndex: 1, flex: 1, display: 'flex', flexDirection: 'column' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '2rem', justifyContent: 'center' }}>
+                  <Dumbbell color="#a855f7" />
+                  <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>Coach<span style={{ color: '#a855f7' }}>Node</span></span>
+                </div>
+                
+                <h3 style={{ fontSize: '1.5rem', margin: '0 0 0.5rem 0', textTransform: 'uppercase', lineHeight: 1.1 }}>{shareRoutine.name}</h3>
+                <p style={{ color: '#94a3b8', margin: '0 0 2rem 0', fontSize: '0.9rem' }}>{formatDate(shareRoutine.date)}</p>
+                
+                <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '0.5rem', padding: '1rem', marginBottom: 'auto' }}>
+                  <p style={{ margin: '0 0 0.5rem 0', fontWeight: 'bold', color: '#a855f7' }}>Highlights:</p>
+                  <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {shareRoutine.exercises.slice(0, 4).map((ex, idx) => (
+                      <li key={idx}><strong>{ex.name}</strong></li>
+                    ))}
+                    {shareRoutine.exercises.length > 4 && <li>Y {shareRoutine.exercises.length - 4} más...</li>}
+                  </ul>
+                </div>
+                
+                {shareRoutine.duration > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem' }}>
+                    <span style={{ fontSize: '0.9rem', color: '#94a3b8' }}>Duración:</span>
+                    <strong style={{ fontSize: '1.2rem', color: '#a3e635' }}>{formatTime(shareRoutine.duration)}</strong>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '1rem', width: '100%', marginTop: '2rem' }}>
+              <button className="btn-secondary" style={{ flex: 1 }} onClick={() => setShareRoutine(null)}>Cancelar</button>
+              <button className="btn-primary" style={{ flex: 2, background: 'linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%)', border: 'none' }} onClick={handleShareToInstagram} disabled={isCapturing}>
+                {isCapturing ? 'Generando...' : 'Compartir Story'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Floating Rest Timer */}
       {showRestTimer && (
@@ -654,6 +753,12 @@ Formato requerido:
                                     <button type="button" onClick={() => handleWeightChange(5)} style={{ flex: 1, padding: '0.6rem 0.25rem', background: 'transparent', border: 'none', color: 'var(--muted-foreground)', fontWeight: 'bold', cursor: 'pointer', borderLeft: '1px solid rgba(255,255,255,0.05)' }}>+5</button>
                                   </div>
                                   
+                                  {currentWeight > 0 && currentReps > 1 && currentReps <= 15 && (
+                                    <div style={{ marginTop: '0.5rem', display: 'inline-flex', background: 'rgba(163, 230, 53, 0.1)', color: '#a3e635', padding: '0.2rem 0.6rem', borderRadius: '50px', fontSize: '0.75rem', fontWeight: 'bold', alignItems: 'center', gap: '0.25rem', animation: 'fade-up 0.3s' }}>
+                                      🚀 1RM Est: {Math.round(currentWeight * (36 / (37 - currentReps)))} kg
+                                    </div>
+                                  )}
+                                  
                                   {showPlateCalc === `${routine.id}-${i}` && (
                                     <div style={{ marginTop: '0.75rem', background: 'rgba(163, 230, 53, 0.1)', border: '1px solid rgba(163, 230, 53, 0.2)', padding: '0.75rem', borderRadius: '4px', fontSize: '0.85rem' }}>
                                       <p style={{ margin: '0 0 0.5rem 0', color: 'var(--primary)', fontWeight: 'bold' }}>Armar barra de 20kg ({currentWeight}kg total):</p>
@@ -709,15 +814,27 @@ Formato requerido:
                             onChange={(e) => setGeneralFeedback({...generalFeedback, [routine.id]: e.target.value})}
                             style={{ width: '100%', marginBottom: '1rem', resize: 'vertical' }}
                           />
-                          <button 
-                            className="btn-primary" 
-                            style={{ width: '100%', padding: '1rem', fontSize: '1.1rem' }}
-                            disabled={completing}
-                            onClick={() => handleCompleteWorkout(routine)}
-                          >
-                            <CheckCircle size={20} style={{ marginRight: '0.5rem' }}/>
-                            {completing ? 'Guardando...' : (routine.completed ? 'Actualizar Progreso de Rutina' : (activeSession && activeSession.workoutId === routine.id ? '⏹ Finalizar Entrenamiento' : 'Marcar Rutina como Completada'))}
-                          </button>
+                          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                            <button 
+                              className="btn-primary" 
+                              style={{ flex: 2, padding: '1rem', fontSize: '1.1rem' }}
+                              disabled={completing}
+                              onClick={() => handleCompleteWorkout(routine)}
+                            >
+                              <CheckCircle size={20} style={{ marginRight: '0.5rem' }}/>
+                              {completing ? 'Guardando...' : (routine.completed ? 'Actualizar Progreso de Rutina' : (activeSession && activeSession.workoutId === routine.id ? '⏹ Finalizar Entrenamiento' : 'Marcar Rutina como Completada'))}
+                            </button>
+                            {routine.completed && (
+                              <button 
+                                className="btn-secondary"
+                                style={{ flex: 1, padding: '1rem', background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7', border: '1px solid rgba(168, 85, 247, 0.3)' }}
+                                onClick={() => setShareRoutine(routine)}
+                              >
+                                <Share2 size={20} />
+                                Compartir
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>

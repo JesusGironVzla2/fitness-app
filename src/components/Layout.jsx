@@ -18,7 +18,8 @@ import {
   ClipboardList,
   LifeBuoy,
   Sparkles,
-  Flame
+  Flame,
+  Heart
 } from 'lucide-react';
 import '../styles/global.css';
 import NotificationPanel from './NotificationPanel';
@@ -129,6 +130,7 @@ export default function Layout() {
       { name: 'Mi Progreso', path: '/progreso', icon: Activity },
       { name: 'Mensajes', path: '/mensajes', icon: MessageSquare },
       { name: 'Consejos', path: '/consejos', icon: Sparkles },
+      { name: 'Wellness', path: '/wellness', icon: Heart },
       { name: 'Soporte', path: '/soporte', icon: LifeBuoy },
       { name: 'Configuración', path: '/configuracion', icon: Settings },
     ]
