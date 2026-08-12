@@ -84,7 +84,7 @@ Coach:`;
       setMessages(prev => [...prev, { role: 'assistant', content: response.text() }]);
     } catch (error) {
       console.error(error);
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Lo siento, hubo un problema de conexión con mi cerebro artificial. Verifica tu API Key o conexión.' }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: `Error técnico: ${error.message}` }]);
     } finally {
       setIsTyping(false);
     }
