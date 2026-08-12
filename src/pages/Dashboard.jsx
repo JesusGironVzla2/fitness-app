@@ -5,7 +5,10 @@ import { useAuth } from '../context/AuthContext';
 import { collection, query, where, getDocs, addDoc, getDoc, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { ResponsiveContainer, AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, Legend } from 'recharts';
-
+import ProgressRings from '../components/ProgressRings';
+import ActivityCalendar from '../components/ActivityCalendar';
+import Trophies from '../components/Trophies';
+import MuscleMap from '../components/MuscleMap';
 export default function Dashboard() {
   const navigate = useNavigate();
   const { userRole, currentUser } = useAuth();
@@ -477,6 +480,13 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
 
   const displayStats = userRole === 'student' ? studentStatsArray : (userRole === 'trainer' ? trainerStats : adminStats);
 
+  const thisWeekWorkouts = workouts.filter(w => w.completed && new Date(w.date || w.completedAt) >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).length;
+  const ringData = [
+    { color: '#eab308', percentage: Math.min(100, (currentStreak / 12) * 100) }, // Racha
+    { color: '#3b82f6', percentage: Math.min(100, (waterGlasses / 8) * 100) },  // Agua
+    { color: '#10b981', percentage: Math.min(100, (thisWeekWorkouts / 5) * 100) } // Entrenos
+  ];
+
   return (
     <div className="dashboard-container">
       <div className="dashboard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
@@ -599,21 +609,45 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
         </button>
       )}
 
-      {/* Water Tracker */}
-      <div className="panel glass" style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid rgba(59, 130, 246, 0.3)', background: 'linear-gradient(to right, rgba(0,0,0,0.6), rgba(59, 130, 246, 0.05))' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div style={{ background: 'rgba(59, 130, 246, 0.15)', padding: '0.75rem', borderRadius: '50%', color: '#3b82f6' }}>
-            <Droplets size={24} />
+      {/* Premium Visuals Section for Students */}
+      {userRole === 'student' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
+          
+          {/* Rings & Water */}
+          <div className="panel glass" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Métricas Semanales</h3>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', gap: '1rem', flexWrap: 'wrap' }}>
+              <ProgressRings rings={ringData} />
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><div style={{width:10,height:10,borderRadius:'50%',background:'#eab308'}}/> Racha: {currentStreak} sem</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><div style={{width:10,height:10,borderRadius:'50%',background:'#3b82f6'}}/> Agua: {waterGlasses}/8</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}><div style={{width:10,height:10,borderRadius:'50%',background:'#10b981'}}/> Entrenos: {thisWeekWorkouts}/5</div>
+                <button className="btn-primary" onClick={handleAddWater} style={{ background: '#3b82f6', color: 'white', padding: '0.4rem 0.8rem', fontSize: '0.85rem', width: '100%' }}>
+                  + Tomar Agua
+                </button>
+              </div>
+            </div>
           </div>
-          <div>
-            <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#3b82f6' }}>Hidratación Diaria</h3>
-            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--muted-foreground)' }}>{waterGlasses} vasos hoy</p>
+
+          {/* Trophies */}
+          <div className="panel glass" style={{ display: 'flex', flexDirection: 'column', gap: '1rem', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Mis Mejores Marcas (PRs)</h3>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+              <Trophies rmLogs={rmLogs} />
+            </div>
           </div>
         </div>
-        <button className="btn-primary" onClick={handleAddWater} style={{ background: '#3b82f6', color: 'white', padding: '0.5rem 1rem' }}>
-          + Tomar Agua
-        </button>
-      </div>
+      )}
+
+      {/* Activity Heatmap */}
+      {userRole === 'student' && (
+        <div className="panel glass" style={{ marginBottom: '1.5rem' }}>
+          <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem' }}>Consistencia de Entrenamiento</h3>
+          <ActivityCalendar workouts={workouts} />
+        </div>
+      )}
+
 
       {/* Insights Panel for all users */}
       <div className="panel glass" style={{ marginBottom: '1rem', border: '1px solid rgba(168, 85, 247, 0.3)', background: 'linear-gradient(to right, rgba(0,0,0,0.6), rgba(168, 85, 247, 0.05))' }}>
@@ -694,7 +728,10 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
             <h3>Trabajo por Músculos</h3>
             <p style={{fontSize: '0.85rem', color: 'var(--muted-foreground)'}}>Frecuencia de entrenamiento por grupo muscular.</p>
             {renderMuscleBreakdown()}
-            {renderRecoveryMap()}
+            <div style={{ marginTop: '2rem', paddingTop: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+              <h4 style={{ margin: '0 0 1rem 0', fontSize: '1rem' }}>Mapa de Fatiga (72h)</h4>
+              <MuscleMap workouts={workouts} exercisesLib={exercisesLib} />
+            </div>
           </div>
           
           {/* Leaderboard Panel */}
