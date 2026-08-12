@@ -245,7 +245,19 @@ export default function StudentWorkouts() {
       }
 
       const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+      
+      const responseAPI = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+      const data = await responseAPI.json();
+      const availableModels = data.models ? data.models.map(m => m.name) : [];
+      let modelName = "gemini-1.5-flash";
+      if (availableModels.length > 0) {
+        const flashModel = availableModels.find(m => m.includes("gemini-1.5-flash"));
+        const proModel = availableModels.find(m => m.includes("gemini-1.5-pro") || m.includes("gemini-pro"));
+        const fallback = availableModels.find(m => m.includes("gemini"));
+        const selected = flashModel || proModel || fallback || "models/gemini-1.5-flash";
+        modelName = selected.replace("models/", "");
+      }
+      const model = genAI.getGenerativeModel({ model: modelName });
 
       const exercisesList = currentExercises.map(ex => `${ex.id}: ${ex.name} (${ex.targetMuscle})`).join('\n');
       

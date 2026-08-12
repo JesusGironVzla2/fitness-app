@@ -63,7 +63,24 @@ export default function AICoachChat() {
       if (!apiKey) throw new Error("Falta API KEY");
       
       const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+      
+      // Auto-discover available models to prevent 404 errors
+      const responseAPI = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+      const data = await responseAPI.json();
+      const availableModels = data.models ? data.models.map(m => m.name) : [];
+      
+      // Prefer 1.5 flash, then 1.5 pro, then anything with gemini
+      let modelName = "gemini-1.5-flash";
+      if (availableModels.length > 0) {
+        const flashModel = availableModels.find(m => m.includes("gemini-1.5-flash"));
+        const proModel = availableModels.find(m => m.includes("gemini-1.5-pro") || m.includes("gemini-pro"));
+        const fallback = availableModels.find(m => m.includes("gemini"));
+        const selected = flashModel || proModel || fallback || "models/gemini-1.5-flash";
+        // Remove "models/" prefix as getGenerativeModel expects it without it sometimes, or it handles both
+        modelName = selected.replace("models/", "");
+      }
+      
+      const model = genAI.getGenerativeModel({ model: modelName });
 
       const context = await fetchUserContext();
       
