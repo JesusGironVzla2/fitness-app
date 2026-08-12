@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { doc, getDoc, updateDoc, collection, addDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, addDoc, getDocs, deleteDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
-import { Save, User } from 'lucide-react';
+import { Save, User, Trash2, AlertTriangle } from 'lucide-react';
 import '../styles/global.css';
 
 export default function Settings() {
@@ -18,6 +18,7 @@ export default function Settings() {
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [message, setMessage] = useState('');
 
   useEffect(() => {
@@ -83,6 +84,33 @@ export default function Settings() {
     } finally {
       setSaving(false);
       setTimeout(() => setMessage(''), 3000);
+    }
+  };
+
+  const handleFactoryReset = async () => {
+    const confirm = window.confirm("¡ATENCIÓN! Estás a punto de borrar TODAS las rutinas (pasadas y futuras) y TODO el historial de progreso de TODOS los alumnos. Esta acción es IRREVERSIBLE. ¿Estás absolutamente seguro?");
+    if (!confirm) return;
+
+    setResetting(true);
+    setMessage('');
+    try {
+      // 1. Delete all workouts
+      const workoutsSnap = await getDocs(collection(db, 'workouts'));
+      const workoutPromises = workoutsSnap.docs.map(d => deleteDoc(d.ref));
+      
+      // 2. Delete all progress_logs
+      const logsSnap = await getDocs(collection(db, 'progress_logs'));
+      const logPromises = logsSnap.docs.map(d => deleteDoc(d.ref));
+      
+      await Promise.all([...workoutPromises, ...logPromises]);
+
+      setMessage('Base de datos limpiada exitosamente. El historial y rutinas han sido borrados.');
+    } catch (err) {
+      console.error(err);
+      setMessage('Error al intentar borrar la base de datos.');
+    } finally {
+      setResetting(false);
+      setTimeout(() => setMessage(''), 8000);
     }
   };
 
@@ -219,6 +247,28 @@ export default function Settings() {
           </div>
         </form>
       </div>
+
+      {userRole === 'admin' && (
+        <div className="glass" style={{ padding: '2rem', borderRadius: 'var(--radius)', marginTop: '2rem', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem', color: '#ef4444' }}>
+            <AlertTriangle size={24} />
+            <h2 style={{ margin: 0 }}>Zona de Peligro</h2>
+          </div>
+          <p style={{ color: 'var(--muted-foreground)', marginBottom: '1.5rem' }}>
+            Esta sección es exclusiva para administradores. Aquí puedes reiniciar la base de datos de historial. Se borrarán todas las rutinas creadas y todos los registros de peso, medidas corporales y RMs de todos los alumnos. <strong>Las cuentas de usuario y la biblioteca de ejercicios no se verán afectadas.</strong>
+          </p>
+          <button 
+            type="button"
+            className="btn-primary" 
+            style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.5)' }}
+            onClick={handleFactoryReset}
+            disabled={resetting}
+          >
+            <Trash2 size={20} style={{ marginRight: '0.5rem' }} />
+            {resetting ? 'Borrando Base de Datos...' : 'Reiniciar Historial y Rutinas'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

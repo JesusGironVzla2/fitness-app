@@ -365,7 +365,35 @@ export default function Dashboard() {
               });
             }
 
-            alert("Datos inyectados exitosamente.");
+            // Seed Workouts for Muscle Pie Chart
+            const qEx = query(collection(db, "exercises"));
+            const exSnap = await getDocs(qEx);
+            if (!exSnap.empty) {
+              const allEx = exSnap.docs.map(d => ({id: d.id, ...d.data()}));
+              for(let i=0; i<4; i++) {
+                const date = new Date(now);
+                date.setDate(date.getDate() - i);
+                
+                const ex1 = allEx[Math.floor(Math.random() * allEx.length)];
+                const ex2 = allEx[Math.floor(Math.random() * allEx.length)];
+                
+                await addDoc(collection(db, "workouts"), {
+                  studentId,
+                  trainerId: currentUser.uid,
+                  name: `Rutina de Prueba ${i+1}`,
+                  date: date.toISOString().split('T')[0],
+                  completed: true,
+                  completedAt: date.toISOString(),
+                  duration: 3600,
+                  exercises: [
+                    { exerciseId: ex1.id, name: ex1.name, sets: 4, reps: 10 },
+                    { exerciseId: ex2.id, name: ex2.name, sets: 4, reps: 10 }
+                  ]
+                });
+              }
+            }
+
+            alert("Datos inyectados exitosamente. Recarga la página para ver los cambios.");
           }}
         >
           Seed Demo Data
