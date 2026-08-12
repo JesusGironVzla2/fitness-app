@@ -4,7 +4,6 @@ import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { Calendar, CheckCircle, MessageSquare, Plus, Dumbbell, ChevronLeft, ChevronRight, Timer, X, Sparkles } from 'lucide-react';
 import { getDoc } from 'firebase/firestore';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import '../styles/global.css';
 
 export default function StudentWorkouts() {
@@ -244,28 +243,18 @@ export default function StudentWorkouts() {
         setExercises(currentExercises);
       }
 
-      const genAI = new GoogleGenerativeAI(apiKey);
-      
-      const responseAPI = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-      const data = await responseAPI.json();
-      const availableModels = data.models ? data.models.map(m => m.name) : [];
-      let modelName = "gemini-1.5-flash";
-      if (availableModels.length > 0) {
-        const flashModel = availableModels.find(m => m.includes("gemini-1.5-flash"));
-        const proModel = availableModels.find(m => m.includes("gemini-1.5-pro") || m.includes("gemini-pro"));
-        const fallback = availableModels.find(m => m.includes("gemini"));
-        const selected = flashModel || proModel || fallback || "models/gemini-1.5-flash";
-        modelName = selected.replace("models/", "");
-      }
-      const model = genAI.getGenerativeModel({ model: modelName });
+      const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY || import.meta.env.VITE_GEMINI_API_KEY;
+      if (!apiKey) throw new Error("Falta API KEY de OpenRouter");
 
       const exercisesList = currentExercises.map(ex => `${ex.id}: ${ex.name} (${ex.targetMuscle})`).join('\n');
       
-      const prompt = `Eres un experto entrenador personal. El usuario pide: "${aiPrompt}".
-Basado en los siguientes ejercicios disponibles:
+      const systemPrompt = `Eres un experto entrenador personal.
+Tu única tarea es generar rutinas de ejercicio en formato JSON estricto.
+No incluyas texto extra, ni explicaciones, SOLO un objeto JSON válido.
+Aquí tienes la lista de ejercicios disponibles en la base de datos local del usuario:
 ${exercisesList}
 
-Crea una rutina óptima. Devuelve SOLO un objeto JSON con este formato exacto (sin markdown, sin explicaciones):
+Formato requerido:
 {
   "name": "Nombre de la rutina sugerida",
   "exercises": [
@@ -278,11 +267,33 @@ Crea una rutina óptima. Devuelve SOLO un objeto JSON con este formato exacto (s
   ]
 }`;
 
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      let text = response.text();
-      text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+      const responseAPI = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "HTTP-Referer": "https://coachnode.vercel.app",
+          "X-Title": "CoachNode",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "meta-llama/llama-3.1-8b-instruct:free",
+          response_format: { type: "json_object" },
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: `El usuario pide: "${aiPrompt}". Crea una rutina utilizando SOLO los IDs de los ejercicios disponibles.` }
+          ]
+        })
+      });
+
+      if (!responseAPI.ok) {
+        const errorData = await responseAPI.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || `Error HTTP ${responseAPI.status}`);
+      }
+
+      const data = await responseAPI.json();
+      let text = data.choices[0].message.content;
       
+      text = text.replace(/```json/g, '').replace(/```/g, '').trim();
       const aiRoutine = JSON.parse(text);
 
       let finalTrainerId = currentUser.uid;

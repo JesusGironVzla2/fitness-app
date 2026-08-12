@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Bot, X, Send, Sparkles } from 'lucide-react';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
@@ -59,46 +58,45 @@ export default function AICoachChat() {
     setIsTyping(true);
 
     try {
-      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) throw new Error("Falta API KEY");
-      
-      const genAI = new GoogleGenerativeAI(apiKey);
-      
-      // Auto-discover available models to prevent 404 errors
-      const responseAPI = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-      const data = await responseAPI.json();
-      const availableModels = data.models ? data.models.map(m => m.name) : [];
-      
-      // Prefer 1.5 flash, then 1.5 pro, then anything with gemini
-      let modelName = "gemini-1.5-flash";
-      if (availableModels.length > 0) {
-        const flashModel = availableModels.find(m => m.includes("gemini-1.5-flash"));
-        const proModel = availableModels.find(m => m.includes("gemini-1.5-pro") || m.includes("gemini-pro"));
-        const fallback = availableModels.find(m => m.includes("gemini"));
-        const selected = flashModel || proModel || fallback || "models/gemini-1.5-flash";
-        // Remove "models/" prefix as getGenerativeModel expects it without it sometimes, or it handles both
-        modelName = selected.replace("models/", "");
-      }
-      
-      const model = genAI.getGenerativeModel({ model: modelName });
+      const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY || import.meta.env.VITE_GEMINI_API_KEY;
+      if (!apiKey) throw new Error("Falta API KEY de OpenRouter");
 
       const context = await fetchUserContext();
       
-      const prompt = `
-Eres CoachNode AI, el asistente virtual de fitness integrado en la aplicación CoachNode.
+      const systemPrompt = `Eres CoachNode AI, el asistente virtual de fitness integrado en la aplicación CoachNode.
 Eres experto en musculación, hipertrofia y ciencias del deporte.
 Responde de forma amigable, directa y usando emojis. Trata de mantener tus respuestas concisas (no más de 3-4 párrafos pequeños).
-${context}
+${context}`;
 
-Historial de conversación:
-${messages.map(m => `${m.role === 'user' ? 'Usuario' : 'Coach'}: ${m.content}`).join('\n')}
+      const apiMessages = [
+        { role: "system", content: systemPrompt },
+        ...messages.map(m => ({ role: m.role, content: m.content })),
+        { role: "user", content: userMessage }
+      ];
 
-Usuario: ${userMessage}
-Coach:`;
+      const responseAPI = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "HTTP-Referer": "https://coachnode.vercel.app",
+          "X-Title": "CoachNode",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "meta-llama/llama-3.1-8b-instruct:free",
+          messages: apiMessages
+        })
+      });
 
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      setMessages(prev => [...prev, { role: 'assistant', content: response.text() }]);
+      if (!responseAPI.ok) {
+        const errorData = await responseAPI.json().catch(() => ({}));
+        throw new Error(errorData.error?.message || `Error HTTP ${responseAPI.status}`);
+      }
+
+      const data = await responseAPI.json();
+      const textResponse = data.choices[0].message.content;
+
+      setMessages(prev => [...prev, { role: 'assistant', content: textResponse }]);
     } catch (error) {
       console.error(error);
       setMessages(prev => [...prev, { role: 'assistant', content: `Error técnico: ${error.message}` }]);
