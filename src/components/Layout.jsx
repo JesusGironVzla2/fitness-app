@@ -17,15 +17,19 @@ import {
   MessageSquare,
   ClipboardList,
   LifeBuoy,
-  Sparkles
+  Sparkles,
+  Flame
 } from 'lucide-react';
 import '../styles/global.css';
 import NotificationPanel from './NotificationPanel';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 export default function Layout() {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [streak, setStreak] = useState(0);
   const navigate = useNavigate();
   const { userRole, logout, isImpersonating, stopImpersonating, currentUser } = useAuth();
 
@@ -37,6 +41,58 @@ export default function Layout() {
       console.error("Error logging out", err);
     }
   };
+
+  React.useEffect(() => {
+    if (currentUser) {
+      const fetchStreak = async () => {
+        try {
+          const q = query(collection(db, "workouts"), where("studentId", "==", currentUser.uid), where("completed", "==", true));
+          const snap = await getDocs(q);
+          const dates = snap.docs.map(d => new Date(d.data().completedAt || d.data().date).toISOString().split('T')[0]);
+          const uniqueDates = [...new Set(dates)].sort((a, b) => new Date(b) - new Date(a));
+          
+          let currentStreak = 0;
+          let checkDate = new Date();
+          
+          if (uniqueDates.length > 0) {
+            const todayStr = checkDate.toISOString().split('T')[0];
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            const yesterdayStr = yesterday.toISOString().split('T')[0];
+            
+            let dateIdx = 0;
+            if (uniqueDates[0] === todayStr) {
+              currentStreak++;
+              dateIdx = 1;
+              checkDate.setDate(checkDate.getDate() - 1);
+            } else if (uniqueDates[0] === yesterdayStr) {
+              currentStreak++;
+              dateIdx = 1;
+              checkDate.setDate(checkDate.getDate() - 2);
+            } else {
+              setStreak(0);
+              return;
+            }
+            
+            while (dateIdx < uniqueDates.length) {
+              const expectedStr = checkDate.toISOString().split('T')[0];
+              if (uniqueDates[dateIdx] === expectedStr) {
+                currentStreak++;
+                checkDate.setDate(checkDate.getDate() - 1);
+                dateIdx++;
+              } else {
+                break;
+              }
+            }
+          }
+          setStreak(currentStreak);
+        } catch (e) {
+          console.error("Error fetching streak", e);
+        }
+      };
+      fetchStreak();
+    }
+  }, [currentUser]);
 
   const navItems = {
     admin: [
@@ -133,6 +189,15 @@ export default function Layout() {
             )}
           </div>
           <div className="topbar-right">
+            
+            {/* Streak Indicator */}
+            {streak > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', background: 'rgba(249, 115, 22, 0.15)', padding: '0.35rem 0.75rem', borderRadius: '50px', color: '#f97316', fontWeight: 'bold' }}>
+                <Flame size={20} fill="#f97316" color="#f97316" />
+                <span>{streak}</span>
+              </div>
+            )}
+
             <div style={{ position: 'relative' }}>
               <button className="icon-btn" onClick={() => setShowNotifications(!showNotifications)}>
                 <Bell size={20} />

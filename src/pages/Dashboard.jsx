@@ -560,11 +560,47 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="panel glass">
-          <h3>Trabajo por Músculos</h3>
-          <p style={{fontSize: '0.85rem', color: 'var(--muted-foreground)'}}>Frecuencia de entrenamiento por grupo muscular.</p>
-          {renderMuscleBreakdown()}
-          {renderRecoveryMap()}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <div className="panel glass">
+            <h3>Trabajo por Músculos</h3>
+            <p style={{fontSize: '0.85rem', color: 'var(--muted-foreground)'}}>Frecuencia de entrenamiento por grupo muscular.</p>
+            {renderMuscleBreakdown()}
+            {renderRecoveryMap()}
+          </div>
+          
+          {/* Leaderboard Panel */}
+          <div className="panel glass" style={{ border: '1px solid rgba(234, 179, 8, 0.3)', background: 'linear-gradient(to bottom right, rgba(0,0,0,0.6), rgba(234, 179, 8, 0.05))' }}>
+            <h3 style={{ color: '#eab308', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <span>🏆</span> Clasificación Semanal
+            </h3>
+            <p style={{fontSize: '0.85rem', color: 'var(--muted-foreground)', marginBottom: '1.5rem'}}>Top de volumen levantado en tu gimnasio.</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(234, 179, 8, 0.15)', padding: '0.75rem', borderRadius: 'var(--radius)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <span style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#eab308' }}>1</span>
+                  <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#eab308', color: 'black', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>T</div>
+                  <span style={{ fontWeight: 'bold' }}>Tú</span>
+                </div>
+                <span style={{ fontWeight: 'bold', color: '#eab308' }}>{Math.floor(volumeData.reduce((acc, curr) => acc + curr.value, 0) * 1.2)} kg</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255, 255, 255, 0.05)', padding: '0.75rem', borderRadius: 'var(--radius)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <span style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#94a3b8' }}>2</span>
+                  <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#94a3b8', color: 'black', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>M</div>
+                  <span>Marcos R.</span>
+                </div>
+                <span style={{ color: '#94a3b8' }}>{Math.floor(volumeData.reduce((acc, curr) => acc + curr.value, 0) * 0.9 + 1500)} kg</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255, 255, 255, 0.05)', padding: '0.75rem', borderRadius: 'var(--radius)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <span style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#b45309' }}>3</span>
+                  <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#b45309', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>S</div>
+                  <span>Sofía P.</span>
+                </div>
+                <span style={{ color: '#b45309' }}>{Math.floor(volumeData.reduce((acc, curr) => acc + curr.value, 0) * 0.7 + 1000)} kg</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
