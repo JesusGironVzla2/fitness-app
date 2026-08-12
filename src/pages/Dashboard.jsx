@@ -59,7 +59,7 @@ export default function Dashboard() {
           const snapE = await getDocs(qE);
           const exMap = {};
           snapE.docs.forEach(doc => {
-            exMap[doc.id] = doc.data().muscle;
+            exMap[doc.id] = doc.data().targetMuscle;
           });
           setExercisesLib(exMap);
           
