@@ -20,7 +20,7 @@ export default function Workouts() {
   const [routineExercises, setRoutineExercises] = useState([]); // [{ exerciseId, sets, reps, weight }]
   
   // Temp state for adding an exercise to the current routine
-  const [filterMuscle, setFilterMuscle] = useState('Todos');
+  const [selectedMuscles, setSelectedMuscles] = useState([]);
 
   const { currentUser } = useAuth();
 
@@ -79,9 +79,22 @@ export default function Workouts() {
   };
 
   const muscleGroups = ['Todos', 'Pecho', 'Espalda', 'Piernas', 'Hombro', 'Bíceps', 'Tríceps', 'Abdomen'];
-  const filteredExercises = filterMuscle === 'Todos' 
+  
+  const toggleMuscleFilter = (muscle) => {
+    if (muscle === 'Todos') {
+      setSelectedMuscles([]);
+      return;
+    }
+    if (selectedMuscles.includes(muscle)) {
+      setSelectedMuscles(selectedMuscles.filter(m => m !== muscle));
+    } else {
+      setSelectedMuscles([...selectedMuscles, muscle]);
+    }
+  };
+
+  const filteredExercises = selectedMuscles.length === 0 
     ? exercises 
-    : exercises.filter(ex => ex.targetMuscle?.toLowerCase().includes(filterMuscle.toLowerCase()));
+    : exercises.filter(ex => selectedMuscles.some(m => ex.targetMuscle?.toLowerCase().includes(m.toLowerCase())));
 
   const handleSaveRoutine = async (e) => {
     e.preventDefault();
@@ -211,25 +224,28 @@ export default function Workouts() {
               </p>
 
               <div className="filters-container" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
-                {muscleGroups.map(muscle => (
-                  <button 
-                    key={muscle}
-                    type="button"
-                    onClick={() => setFilterMuscle(muscle)}
-                    className={`badge ${filterMuscle === muscle ? 'active' : ''}`}
-                    style={{ 
-                      cursor: 'pointer', 
-                      border: 'none', 
-                      fontSize: '0.8rem', 
-                      padding: '0.4rem 0.8rem',
-                      background: filterMuscle === muscle ? 'var(--primary)' : 'rgba(255,255,255,0.05)',
-                      color: filterMuscle === muscle ? 'var(--primary-foreground)' : 'var(--muted-foreground)',
-                      whiteSpace: 'nowrap'
-                    }}
-                  >
-                    {muscle}
-                  </button>
-                ))}
+                {muscleGroups.map(muscle => {
+                  const isActive = muscle === 'Todos' ? selectedMuscles.length === 0 : selectedMuscles.includes(muscle);
+                  return (
+                    <button 
+                      key={muscle}
+                      type="button"
+                      onClick={() => toggleMuscleFilter(muscle)}
+                      className={`badge ${isActive ? 'active' : ''}`}
+                      style={{ 
+                        cursor: 'pointer', 
+                        border: 'none', 
+                        fontSize: '0.8rem', 
+                        padding: '0.4rem 0.8rem',
+                        background: isActive ? 'var(--primary)' : 'rgba(255,255,255,0.05)',
+                        color: isActive ? 'var(--primary-foreground)' : 'var(--muted-foreground)',
+                        whiteSpace: 'nowrap'
+                      }}
+                    >
+                      {muscle}
+                    </button>
+                  );
+                })}
               </div>
 
               <div style={{ maxHeight: '200px', overflowY: 'auto', background: 'rgba(0,0,0,0.2)', padding: '1rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>

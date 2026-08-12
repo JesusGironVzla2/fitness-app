@@ -17,12 +17,16 @@ export default function StudentWorkouts() {
   // Live Workout State
   const [showModal, setShowModal] = useState(false);
   const [exercises, setExercises] = useState([]);
-  const [filterMuscle, setFilterMuscle] = useState('Todos');
+  const [selectedMuscles, setSelectedMuscles] = useState([]);
   const [routineName, setRoutineName] = useState('');
   const [routineExercises, setRoutineExercises] = useState([]);
   const [showCreateExerciseModal, setShowCreateExerciseModal] = useState(false);
   const [newExercise, setNewExercise] = useState({ name: '', targetMuscle: 'Pecho', description: '', imageUrl: '' });
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  
+  // Timer state
+  const [activeSession, setActiveSession] = useState(null);
+  const [sessionTimer, setSessionTimer] = useState(0);
   
   // Calendar states
   const [calendarMonth, setCalendarMonth] = useState(new Date());
@@ -31,6 +35,35 @@ export default function StudentWorkouts() {
   useEffect(() => {
     if (currentUser) fetchWorkouts();
   }, [currentUser]);
+
+  useEffect(() => {
+    let interval;
+    if (activeSession) {
+      interval = setInterval(() => {
+        setSessionTimer(Math.floor((Date.now() - activeSession.startTime) / 1000));
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [activeSession]);
+
+  const formatTime = (totalSeconds) => {
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
+    const s = (totalSeconds % 60).toString().padStart(2, '0');
+    return h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
+  };
+
+  const toggleMuscleFilter = (muscle) => {
+    if (muscle === 'Todos') {
+      setSelectedMuscles([]);
+      return;
+    }
+    if (selectedMuscles.includes(muscle)) {
+      setSelectedMuscles(selectedMuscles.filter(m => m !== muscle));
+    } else {
+      setSelectedMuscles([...selectedMuscles, muscle]);
+    }
+  };
 
   const fetchWorkouts = async () => {
     try {
@@ -169,9 +202,9 @@ export default function StudentWorkouts() {
   };
 
   const muscleGroups = ['Todos', 'Pecho', 'Espalda', 'Piernas', 'Hombro', 'Bíceps', 'Tríceps', 'Abdomen'];
-  const filteredExercises = filterMuscle === 'Todos' 
+  const filteredExercises = selectedMuscles.length === 0 
     ? exercises 
-    : exercises.filter(ex => ex.targetMuscle?.toLowerCase().includes(filterMuscle.toLowerCase()));
+    : exercises.filter(ex => selectedMuscles.some(m => ex.targetMuscle?.toLowerCase().includes(m.toLowerCase())));
 
   const handleCompleteWorkout = async (routine) => {
     try {
@@ -181,11 +214,18 @@ export default function StudentWorkouts() {
       
       const exData = exerciseFeedback[workoutId] || {};
       
+      let finalDuration = routine.duration || 0;
+      if (activeSession && activeSession.workoutId === workoutId) {
+        finalDuration += sessionTimer;
+        setActiveSession(null);
+      }
+      
       // Update the workout document
       await updateDoc(workoutRef, {
         completed: true,
         feedback: generalFeedback[workoutId] || '',
         actualData: exData,
+        duration: finalDuration,
         completedAt: new Date().toISOString()
       });
       
@@ -306,9 +346,30 @@ export default function StudentWorkouts() {
               ) : (
                 routines.filter(r => r.date === calendarSelectedDate).map((routine) => (
                   <div key={routine.id} className="glass active-day" style={{ padding: '1.5rem', borderRadius: 'var(--radius)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-                      <Calendar size={18} color="var(--primary)" />
-                      <h4 style={{ margin: 0, color: 'white', textTransform: 'capitalize' }}>{routine.name}</h4>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <Calendar size={18} color="var(--primary)" />
+                        <h4 style={{ margin: 0, color: 'white', textTransform: 'capitalize' }}>{routine.name}</h4>
+                      </div>
+                      
+                      {!routine.completed && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          {activeSession && activeSession.workoutId === routine.id ? (
+                            <span style={{ color: 'var(--primary)', fontWeight: 'bold', fontFamily: 'monospace', fontSize: '1.2rem', padding: '0.25rem 0.5rem', background: 'rgba(163, 230, 53, 0.1)', borderRadius: '4px' }}>
+                              ⏱ {formatTime(sessionTimer)}
+                            </span>
+                          ) : (
+                            <button 
+                              type="button"
+                              className="badge" 
+                              style={{ border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.85rem' }}
+                              onClick={() => setActiveSession({ workoutId: routine.id, startTime: Date.now() })}
+                            >
+                              ▶ Iniciar Sesión
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                     
                     <div>
@@ -318,10 +379,27 @@ export default function StudentWorkouts() {
                           const fb = (exerciseFeedback[routine.id] || {})[i] || {};
                           const isCompleted = routine.completed;
                           
-                          const reps = fb.reps !== undefined ? fb.reps : (exActualData.reps || '');
-                          const weight = fb.weight !== undefined ? fb.weight : (exActualData.weight || '');
+                          const repsRaw = fb.reps !== undefined ? fb.reps : (exActualData.reps || `${ex.sets}x${ex.reps}`);
+                          const [sStr, rStr] = String(repsRaw).split('x');
+                          const currentSeries = parseInt(sStr) || ex.sets || 0;
+                          const currentReps = parseInt(rStr) || ex.reps || 0;
+                          const currentWeight = parseFloat(fb.weight !== undefined ? fb.weight : (exActualData.weight || 0));
+                          
                           const note = fb.note !== undefined ? fb.note : (exActualData.note || '');
                           const done = fb.done !== undefined ? fb.done : (exActualData.done || false);
+                          
+                          const handleSeriesChange = (val) => {
+                            const newVal = Math.max(0, currentSeries + val);
+                            handleExerciseChange(routine.id, i, 'reps', `${newVal}x${currentReps}`);
+                          };
+                          const handleRepsChange = (val) => {
+                            const newVal = Math.max(0, currentReps + val);
+                            handleExerciseChange(routine.id, i, 'reps', `${currentSeries}x${newVal}`);
+                          };
+                          const handleWeightChange = (val) => {
+                            const newVal = Math.max(0, currentWeight + val);
+                            handleExerciseChange(routine.id, i, 'weight', newVal);
+                          };
                           
                           return (
                             <div key={i} style={{ background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: '4px', fontSize: '0.9rem', opacity: done ? 0.7 : 1, transition: 'opacity 0.2s' }}>
@@ -336,30 +414,40 @@ export default function StudentWorkouts() {
                                 <span style={{ color: 'var(--primary)', marginLeft: 'auto' }}>Meta: {ex.sets}x{ex.reps}</span>
                               </div>
                               
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '1rem' }}>
-                                <div>
-                                  <label style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>Reps / Series</label>
-                                  <input 
-                                    type="text" 
-                                    className="input-field" 
-                                    placeholder={`Ej. 4x8`}
-                                    value={reps}
-                                    onChange={(e) => handleExerciseChange(routine.id, i, 'reps', e.target.value)}
-                                    style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem' }}
-                                  />
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem', marginTop: '1.25rem' }}>
+                                
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                  <div>
+                                    <label style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)', display: 'block', marginBottom: '0.5rem' }}>Series</label>
+                                    <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius)', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                      <button type="button" onClick={() => handleSeriesChange(-1)} style={{ flex: 1, padding: '0.5rem', background: 'transparent', border: 'none', color: 'var(--primary)', fontWeight: 'bold', cursor: 'pointer' }}>-</button>
+                                      <span style={{ padding: '0.5rem', fontWeight: 'bold', minWidth: '30px', textAlign: 'center' }}>{currentSeries}</span>
+                                      <button type="button" onClick={() => handleSeriesChange(1)} style={{ flex: 1, padding: '0.5rem', background: 'transparent', border: 'none', color: 'var(--primary)', fontWeight: 'bold', cursor: 'pointer' }}>+</button>
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <label style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)', display: 'block', marginBottom: '0.5rem' }}>Reps</label>
+                                    <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius)', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                      <button type="button" onClick={() => handleRepsChange(-1)} style={{ flex: 1, padding: '0.5rem', background: 'transparent', border: 'none', color: 'var(--primary)', fontWeight: 'bold', cursor: 'pointer' }}>-</button>
+                                      <span style={{ padding: '0.5rem', fontWeight: 'bold', minWidth: '30px', textAlign: 'center' }}>{currentReps}</span>
+                                      <button type="button" onClick={() => handleRepsChange(1)} style={{ flex: 1, padding: '0.5rem', background: 'transparent', border: 'none', color: 'var(--primary)', fontWeight: 'bold', cursor: 'pointer' }}>+</button>
+                                    </div>
+                                  </div>
                                 </div>
+
                                 <div>
-                                  <label style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>Peso (kg)</label>
-                                  <input 
-                                    type="number" 
-                                    className="input-field" 
-                                    placeholder="Ej. 60"
-                                    value={weight}
-                                    onChange={(e) => handleExerciseChange(routine.id, i, 'weight', e.target.value)}
-                                    style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem' }}
-                                  />
+                                  <label style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)', display: 'block', marginBottom: '0.5rem' }}>Peso (kg)</label>
+                                  <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius)', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                    <button type="button" onClick={() => handleWeightChange(-5)} style={{ flex: 1, padding: '0.6rem 0.25rem', background: 'transparent', border: 'none', color: 'var(--muted-foreground)', fontWeight: 'bold', cursor: 'pointer', borderRight: '1px solid rgba(255,255,255,0.05)' }}>-5</button>
+                                    <button type="button" onClick={() => handleWeightChange(-1)} style={{ flex: 1, padding: '0.6rem 0.25rem', background: 'transparent', border: 'none', color: 'var(--primary)', fontWeight: 'bold', cursor: 'pointer' }}>-1</button>
+                                    <span style={{ padding: '0.5rem', fontWeight: 'bold', minWidth: '50px', textAlign: 'center', fontSize: '1.1rem' }}>{currentWeight}</span>
+                                    <button type="button" onClick={() => handleWeightChange(1)} style={{ flex: 1, padding: '0.6rem 0.25rem', background: 'transparent', border: 'none', color: 'var(--primary)', fontWeight: 'bold', cursor: 'pointer' }}>+1</button>
+                                    <button type="button" onClick={() => handleWeightChange(5)} style={{ flex: 1, padding: '0.6rem 0.25rem', background: 'transparent', border: 'none', color: 'var(--muted-foreground)', fontWeight: 'bold', cursor: 'pointer', borderLeft: '1px solid rgba(255,255,255,0.05)' }}>+5</button>
+                                  </div>
                                 </div>
-                                <div style={{ gridColumn: 'span 2' }}>
+
+                                <div>
                                   <label style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>Nota / Sensaciones</label>
                                   <input 
                                     type="text" 
@@ -403,7 +491,7 @@ export default function StudentWorkouts() {
                             onClick={() => handleCompleteWorkout(routine)}
                           >
                             <CheckCircle size={20} style={{ marginRight: '0.5rem' }}/>
-                            {completing ? 'Guardando...' : (routine.completed ? 'Actualizar Progreso de Rutina' : 'Marcar Rutina como Completada')}
+                            {completing ? 'Guardando...' : (routine.completed ? 'Actualizar Progreso de Rutina' : (activeSession && activeSession.workoutId === routine.id ? '⏹ Finalizar Entrenamiento' : 'Marcar Rutina como Completada'))}
                           </button>
                         </div>
                       </div>
