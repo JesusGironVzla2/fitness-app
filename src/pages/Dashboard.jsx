@@ -16,7 +16,6 @@ export default function Dashboard() {
   const [workouts, setWorkouts] = useState([]);
   const [exercisesLib, setExercisesLib] = useState({});
   const [studentStats, setStudentStats] = useState({ weight: '-', fat: '-', rms: 0 });
-  const [studentStats, setStudentStats] = useState({ weight: '-', fat: '-', rms: 0 });
   const [insights, setInsights] = useState([]);
   const [loadingAI, setLoadingAI] = useState(false);
 

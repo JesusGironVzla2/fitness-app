@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, updateDoc, doc, addDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
-import { Calendar, CheckCircle, MessageSquare, Plus, Dumbbell } from 'lucide-react';
+import { Calendar, CheckCircle, MessageSquare, Plus, Dumbbell, ChevronLeft, ChevronRight } from 'lucide-react';
 import { getDoc } from 'firebase/firestore';
 import '../styles/global.css';
 
@@ -23,6 +23,10 @@ export default function StudentWorkouts() {
   const [showCreateExerciseModal, setShowCreateExerciseModal] = useState(false);
   const [newExercise, setNewExercise] = useState({ name: '', targetMuscle: 'Pecho', description: '', imageUrl: '' });
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  
+  // Calendar states
+  const [calendarMonth, setCalendarMonth] = useState(new Date());
+  const [calendarSelectedDate, setCalendarSelectedDate] = useState(new Date().toISOString().split('T')[0]);
 
   useEffect(() => {
     if (currentUser) fetchWorkouts();
@@ -200,6 +204,32 @@ export default function StudentWorkouts() {
     return date.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
   };
 
+  const getDaysInMonth = (date) => new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  const getFirstDayOfMonth = (date) => new Date(date.getFullYear(), date.getMonth(), 1).getDay();
+  
+  const daysInMonth = getDaysInMonth(calendarMonth);
+  const firstDay = getFirstDayOfMonth(calendarMonth);
+  
+  const calendarGrid = [];
+  let dayCounter = 1;
+  for (let i = 0; i < 6; i++) {
+    const week = [];
+    for (let j = 0; j < 7; j++) {
+      if (i === 0 && j < firstDay) {
+        week.push(null);
+      } else if (dayCounter <= daysInMonth) {
+        week.push(dayCounter);
+        dayCounter++;
+      } else {
+        week.push(null);
+      }
+    }
+    calendarGrid.push(week);
+    if (dayCounter > daysInMonth) break;
+  }
+  
+  const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+
   return (
     <div className="workouts-page">
       <div className="page-header">
@@ -213,119 +243,178 @@ export default function StudentWorkouts() {
         </button>
       </div>
 
-      <div className="grid">
-        {loading ? <p>Cargando tu plan...</p> : routines.length === 0 ? (
-           <p style={{ color: 'var(--muted-foreground)' }}>Aún no tienes entrenamientos asignados en el calendario.</p>
-        ) : (
-          routines.map((routine) => (
-            <div key={routine.id} className="glass active-day" style={{ padding: '1.5rem', borderRadius: 'var(--radius)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-                <Calendar size={18} color="var(--primary)" />
-                <h3 style={{ margin: 0, color: 'white', textTransform: 'capitalize' }}>{formatDate(routine.date)}</h3>
-              </div>
-              
-              <div>
-                <h4 style={{ color: 'var(--primary)', marginBottom: '1rem' }}>{routine.name}</h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  {routine.exercises.map((ex, i) => {
-                    const exActualData = (routine.actualData && routine.actualData[i]) || {};
-                    const fb = (exerciseFeedback[routine.id] || {})[i] || {};
-                    const isCompleted = routine.completed;
+      {loading ? (
+        <p>Cargando tu plan...</p>
+      ) : (
+        <>
+          <div className="calendar-container glass" style={{ padding: '1.5rem', borderRadius: 'var(--radius)', marginBottom: '2rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <button className="btn-secondary" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))} style={{ padding: '0.5rem' }}><ChevronLeft size={20} /></button>
+              <h3 style={{ margin: 0, color: 'white', textTransform: 'capitalize' }}>{monthNames[calendarMonth.getMonth()]} {calendarMonth.getFullYear()}</h3>
+              <button className="btn-secondary" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))} style={{ padding: '0.5rem' }}><ChevronRight size={20} /></button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '0.5rem', textAlign: 'center', marginBottom: '0.5rem' }}>
+              {['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map(day => (
+                <div key={day} style={{ color: 'var(--muted-foreground)', fontSize: '0.8rem', fontWeight: 'bold' }}>{day}</div>
+              ))}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '0.5rem' }}>
+              {calendarGrid.map((week, i) => (
+                <React.Fragment key={i}>
+                  {week.map((day, j) => {
+                    if (!day) return <div key={j} />;
                     
-                    const reps = fb.reps !== undefined ? fb.reps : (exActualData.reps || '');
-                    const weight = fb.weight !== undefined ? fb.weight : (exActualData.weight || '');
-                    const note = fb.note !== undefined ? fb.note : (exActualData.note || '');
-                    const done = fb.done !== undefined ? fb.done : (exActualData.done || false);
+                    const dateStr = `${calendarMonth.getFullYear()}-${String(calendarMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    const hasRoutine = routines.some(r => r.date === dateStr);
+                    const isSelected = calendarSelectedDate === dateStr;
                     
                     return (
-                      <div key={i} style={{ background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: '4px', fontSize: '0.9rem', opacity: done ? 0.7 : 1, transition: 'opacity 0.2s' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
-                          <input 
-                            type="checkbox" 
-                            checked={done}
-                            onChange={(e) => handleExerciseChange(routine.id, i, 'done', e.target.checked)}
-                            style={{ transform: 'scale(1.3)', cursor: 'pointer', accentColor: 'var(--primary)' }}
-                          />
-                          <strong style={{ color: done ? 'var(--muted-foreground)' : 'white', fontSize: '1rem', textDecoration: done ? 'line-through' : 'none' }}>{ex.name}</strong>
-                          <span style={{ color: 'var(--primary)', marginLeft: 'auto' }}>Meta: {ex.sets}x{ex.reps}</span>
-                        </div>
-                        
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '1rem' }}>
-                          <div>
-                            <label style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>Reps / Series</label>
-                            <input 
-                              type="text" 
-                              className="input-field" 
-                              placeholder={`Ej. 4x8`}
-                              value={reps}
-                              onChange={(e) => handleExerciseChange(routine.id, i, 'reps', e.target.value)}
-                              style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem' }}
-                            />
-                          </div>
-                          <div>
-                            <label style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>Peso (kg)</label>
-                            <input 
-                              type="number" 
-                              className="input-field" 
-                              placeholder="Ej. 60"
-                              value={weight}
-                              onChange={(e) => handleExerciseChange(routine.id, i, 'weight', e.target.value)}
-                              style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem' }}
-                            />
-                          </div>
-                          <div style={{ gridColumn: 'span 2' }}>
-                            <label style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>Nota / Sensaciones</label>
-                            <input 
-                              type="text" 
-                              className="input-field" 
-                              placeholder="Ej. Me costó mucho..."
-                              value={note}
-                              onChange={(e) => handleExerciseChange(routine.id, i, 'note', e.target.value)}
-                              style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem' }}
-                            />
-                          </div>
-                        </div>
+                      <div 
+                        key={j} 
+                        onClick={() => setCalendarSelectedDate(dateStr)}
+                        style={{ 
+                          aspectRatio: '1', 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'center', 
+                          background: isSelected ? 'var(--primary)' : (hasRoutine ? 'rgba(163, 230, 53, 0.1)' : 'rgba(255,255,255,0.02)'),
+                          color: isSelected ? 'var(--primary-foreground)' : (hasRoutine ? 'var(--primary)' : 'white'),
+                          border: hasRoutine && !isSelected ? '1px solid rgba(163, 230, 53, 0.3)' : '1px solid transparent',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          position: 'relative',
+                          fontWeight: isSelected || hasRoutine ? 'bold' : 'normal'
+                        }}
+                      >
+                        {day}
+                        {hasRoutine && <div style={{ position: 'absolute', bottom: '4px', width: '4px', height: '4px', borderRadius: '50%', background: isSelected ? 'var(--primary-foreground)' : 'var(--primary)' }} />}
                       </div>
                     );
                   })}
-                </div>
-                
-                <div style={{ padding: '1.5rem 0' }}>
-                  {routine.completed && (
-                    <div style={{ background: 'rgba(16, 185, 129, 0.1)', padding: '1rem', borderRadius: 'var(--radius)', border: '1px solid rgba(16, 185, 129, 0.2)', marginBottom: '1rem' }}>
-                      <h4 style={{ margin: 0, color: '#10b981', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <CheckCircle size={20} />
-                        Rutina marcada como completada
-                      </h4>
-                    </div>
-                  )}
-
-                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: 'var(--radius)' }}>
-                    <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--foreground)' }}>Comentario General de la Rutina (opcional)</label>
-                    <textarea 
-                      className="input-field" 
-                      rows="2" 
-                      placeholder="Ej. Me sentí súper bien hoy, terminé en 45 min..."
-                      value={generalFeedback[routine.id] !== undefined ? generalFeedback[routine.id] : (routine.feedback || '')}
-                      onChange={(e) => setGeneralFeedback({...generalFeedback, [routine.id]: e.target.value})}
-                      style={{ width: '100%', marginBottom: '1rem', resize: 'vertical' }}
-                    />
-                    <button 
-                      className="btn-primary" 
-                      style={{ width: '100%', padding: '1rem', fontSize: '1.1rem' }}
-                      disabled={completing}
-                      onClick={() => handleCompleteWorkout(routine)}
-                    >
-                      <CheckCircle size={20} style={{ marginRight: '0.5rem' }}/>
-                      {completing ? 'Guardando...' : (routine.completed ? 'Actualizar Progreso de Rutina' : 'Marcar Rutina como Completada')}
-                    </button>
-                  </div>
-                </div>
-              </div>
+                </React.Fragment>
+              ))}
             </div>
-          ))
-        )}
-      </div>
+          </div>
+
+          <div className="selected-date-routines">
+            <h3 style={{ marginBottom: '1.5rem', color: 'white', textTransform: 'capitalize' }}>
+              Entrenamientos del {formatDate(calendarSelectedDate)}
+            </h3>
+            <div className="grid">
+              {routines.filter(r => r.date === calendarSelectedDate).length === 0 ? (
+                <p style={{ color: 'var(--muted-foreground)' }}>No hay entrenamientos asignados para este día.</p>
+              ) : (
+                routines.filter(r => r.date === calendarSelectedDate).map((routine) => (
+                  <div key={routine.id} className="glass active-day" style={{ padding: '1.5rem', borderRadius: 'var(--radius)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+                      <Calendar size={18} color="var(--primary)" />
+                      <h4 style={{ margin: 0, color: 'white', textTransform: 'capitalize' }}>{routine.name}</h4>
+                    </div>
+                    
+                    <div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                        {routine.exercises.map((ex, i) => {
+                          const exActualData = (routine.actualData && routine.actualData[i]) || {};
+                          const fb = (exerciseFeedback[routine.id] || {})[i] || {};
+                          const isCompleted = routine.completed;
+                          
+                          const reps = fb.reps !== undefined ? fb.reps : (exActualData.reps || '');
+                          const weight = fb.weight !== undefined ? fb.weight : (exActualData.weight || '');
+                          const note = fb.note !== undefined ? fb.note : (exActualData.note || '');
+                          const done = fb.done !== undefined ? fb.done : (exActualData.done || false);
+                          
+                          return (
+                            <div key={i} style={{ background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: '4px', fontSize: '0.9rem', opacity: done ? 0.7 : 1, transition: 'opacity 0.2s' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+                                <input 
+                                  type="checkbox" 
+                                  checked={done}
+                                  onChange={(e) => handleExerciseChange(routine.id, i, 'done', e.target.checked)}
+                                  style={{ transform: 'scale(1.3)', cursor: 'pointer', accentColor: 'var(--primary)' }}
+                                />
+                                <strong style={{ color: done ? 'var(--muted-foreground)' : 'white', fontSize: '1rem', textDecoration: done ? 'line-through' : 'none' }}>{ex.name}</strong>
+                                <span style={{ color: 'var(--primary)', marginLeft: 'auto' }}>Meta: {ex.sets}x{ex.reps}</span>
+                              </div>
+                              
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '1rem' }}>
+                                <div>
+                                  <label style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>Reps / Series</label>
+                                  <input 
+                                    type="text" 
+                                    className="input-field" 
+                                    placeholder={`Ej. 4x8`}
+                                    value={reps}
+                                    onChange={(e) => handleExerciseChange(routine.id, i, 'reps', e.target.value)}
+                                    style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem' }}
+                                  />
+                                </div>
+                                <div>
+                                  <label style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>Peso (kg)</label>
+                                  <input 
+                                    type="number" 
+                                    className="input-field" 
+                                    placeholder="Ej. 60"
+                                    value={weight}
+                                    onChange={(e) => handleExerciseChange(routine.id, i, 'weight', e.target.value)}
+                                    style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem' }}
+                                  />
+                                </div>
+                                <div style={{ gridColumn: 'span 2' }}>
+                                  <label style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>Nota / Sensaciones</label>
+                                  <input 
+                                    type="text" 
+                                    className="input-field" 
+                                    placeholder="Ej. Me costó mucho..."
+                                    value={note}
+                                    onChange={(e) => handleExerciseChange(routine.id, i, 'note', e.target.value)}
+                                    style={{ width: '100%', padding: '0.5rem', marginTop: '0.25rem' }}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      
+                      <div style={{ padding: '1.5rem 0' }}>
+                        {routine.completed && (
+                          <div style={{ background: 'rgba(16, 185, 129, 0.1)', padding: '1rem', borderRadius: 'var(--radius)', border: '1px solid rgba(16, 185, 129, 0.2)', marginBottom: '1rem' }}>
+                            <h4 style={{ margin: 0, color: '#10b981', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <CheckCircle size={20} />
+                              Rutina marcada como completada
+                            </h4>
+                          </div>
+                        )}
+
+                        <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1.5rem', borderRadius: 'var(--radius)' }}>
+                          <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--foreground)' }}>Comentario General de la Rutina (opcional)</label>
+                          <textarea 
+                            className="input-field" 
+                            rows="2" 
+                            placeholder="Ej. Me sentí súper bien hoy, terminé en 45 min..."
+                            value={generalFeedback[routine.id] !== undefined ? generalFeedback[routine.id] : (routine.feedback || '')}
+                            onChange={(e) => setGeneralFeedback({...generalFeedback, [routine.id]: e.target.value})}
+                            style={{ width: '100%', marginBottom: '1rem', resize: 'vertical' }}
+                          />
+                          <button 
+                            className="btn-primary" 
+                            style={{ width: '100%', padding: '1rem', fontSize: '1.1rem' }}
+                            disabled={completing}
+                            onClick={() => handleCompleteWorkout(routine)}
+                          >
+                            <CheckCircle size={20} style={{ marginRight: '0.5rem' }}/>
+                            {completing ? 'Guardando...' : (routine.completed ? 'Actualizar Progreso de Rutina' : 'Marcar Rutina como Completada')}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       <style>{`
         .active-day {
