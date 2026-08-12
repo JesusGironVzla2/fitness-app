@@ -192,10 +192,14 @@ export default function Layout() {
             
             {/* Streak Indicator */}
             {streak > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', background: 'rgba(249, 115, 22, 0.15)', padding: '0.35rem 0.75rem', borderRadius: '50px', color: '#f97316', fontWeight: 'bold' }}>
+              <button 
+                onClick={() => navigate('/mis-rutinas')}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', background: 'rgba(249, 115, 22, 0.15)', padding: '0.35rem 0.75rem', borderRadius: '50px', color: '#f97316', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}
+                title="Días seguidos entrenando. ¡No pierdas tu racha!"
+              >
                 <Flame size={20} fill="#f97316" color="#f97316" />
                 <span>{streak}</span>
-              </div>
+              </button>
             )}
 
             <div style={{ position: 'relative' }}>

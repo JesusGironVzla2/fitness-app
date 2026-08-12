@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Activity, TrendingUp, Dumbbell, ClipboardList, CheckCircle, Scale, Droplets, Sparkles, TrendingDown, Minus } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Users, Activity, TrendingUp, Dumbbell, ClipboardList, CheckCircle, Scale, Droplets, Sparkles, TrendingDown, Minus, Play } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -7,6 +8,7 @@ import { ResponsiveContainer, AreaChart, Area, LineChart, Line, XAxis, YAxis, Ca
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const { userRole, currentUser } = useAuth();
   const [studentCount, setStudentCount] = useState(0);
   
@@ -393,8 +395,15 @@ export default function Dashboard() {
         </>
       )}
 
-      <div style={{ marginTop: '1rem' }}>
-        <h2 style={{ fontSize: '1.25rem', marginBottom: '1rem' }}>Mi Entrenamiento Personal</h2>
+      <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '1rem' }}>
+        <h2 style={{ fontSize: '1.25rem', margin: 0 }}>Mi Entrenamiento Personal</h2>
+        <button 
+          className="btn-primary" 
+          onClick={() => navigate('/mis-rutinas')}
+          style={{ background: 'var(--primary)', color: 'black', fontWeight: 'bold', padding: '0.5rem 1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+        >
+          <Play size={18} fill="black" /> Empezar Rutina
+        </button>
       </div>
 
       {userRole === 'admin' && (
