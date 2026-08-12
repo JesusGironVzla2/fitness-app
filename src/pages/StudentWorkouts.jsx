@@ -48,10 +48,35 @@ export default function StudentWorkouts() {
   // Social Share State
   const [shareRoutine, setShareRoutine] = useState(null);
   const [isCapturing, setIsCapturing] = useState(false);
+  
+  // Exercise Images Dictionary
+  const [exerciseImages, setExerciseImages] = useState({});
 
   useEffect(() => {
-    if (currentUser) fetchWorkouts();
+    if (currentUser) {
+      fetchWorkouts();
+      fetchExerciseImages();
+    }
   }, [currentUser]);
+
+  const fetchExerciseImages = async () => {
+    try {
+      const q = query(collection(db, "exercises"));
+      const snap = await getDocs(q);
+      const images = {};
+      snap.forEach(doc => {
+        if (doc.data().imageUrl) {
+          images[doc.id] = doc.data().imageUrl;
+        } else if (doc.data().name) {
+          // If no imageUrl, we could potentially map by name later if needed
+          // images[doc.data().name.toLowerCase()] = doc.data().imageUrl;
+        }
+      });
+      setExerciseImages(images);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   useEffect(() => {
     let interval;
@@ -676,6 +701,17 @@ Formato requerido:
                                 <strong style={{ color: done ? 'var(--muted-foreground)' : 'white', fontSize: '1rem', textDecoration: done ? 'line-through' : 'none' }}>{ex.name}</strong>
                                 <span style={{ color: 'var(--primary)', marginLeft: 'auto' }}>Meta: {ex.sets}x{ex.reps}</span>
                               </div>
+                              
+                              {exerciseImages[ex.exerciseId] && (
+                                <div style={{ marginTop: '0.75rem', marginBottom: '1rem', borderRadius: '8px', overflow: 'hidden', background: 'rgba(0,0,0,0.2)', display: 'flex', justifyContent: 'center' }}>
+                                  <img 
+                                    src={exerciseImages[ex.exerciseId]} 
+                                    alt={ex.name} 
+                                    style={{ width: '100%', maxHeight: '200px', objectFit: 'contain' }} 
+                                    loading="lazy"
+                                  />
+                                </div>
+                              )}
                               
                               <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem', marginTop: '1.25rem' }}>
                                 
