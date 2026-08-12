@@ -187,7 +187,7 @@ export default function StudentWorkouts() {
         exerciseId: ex.id,
         name: ex.name,
         sets: 4,
-        reps: 12,
+        reps: 6,
       }]);
     }
   };
