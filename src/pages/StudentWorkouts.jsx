@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, updateDoc, doc, addDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
-import { Calendar, CheckCircle, MessageSquare, Plus, Dumbbell, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Calendar, CheckCircle, MessageSquare, Plus, Dumbbell, ChevronLeft, ChevronRight, Timer, X } from 'lucide-react';
 import { getDoc } from 'firebase/firestore';
 import '../styles/global.css';
 
@@ -27,6 +27,13 @@ export default function StudentWorkouts() {
   // Timer state
   const [activeSession, setActiveSession] = useState(null);
   const [sessionTimer, setSessionTimer] = useState(0);
+
+  // Rest Timer State
+  const [restTimer, setRestTimer] = useState(0);
+  const [showRestTimer, setShowRestTimer] = useState(false);
+  
+  // Plate Calculator State
+  const [showPlateCalc, setShowPlateCalc] = useState(null);
   
   // Calendar states
   const [calendarMonth, setCalendarMonth] = useState(new Date());
@@ -45,6 +52,38 @@ export default function StudentWorkouts() {
     }
     return () => clearInterval(interval);
   }, [activeSession]);
+
+  useEffect(() => {
+    let interval;
+    if (restTimer > 0) {
+      interval = setInterval(() => {
+        setRestTimer(prev => prev - 1);
+      }, 1000);
+    } else if (restTimer === 0 && showRestTimer) {
+      setShowRestTimer(false);
+    }
+    return () => clearInterval(interval);
+  }, [restTimer, showRestTimer]);
+
+  const startRestTimer = (seconds = 90) => {
+    setRestTimer(seconds);
+    setShowRestTimer(true);
+  };
+
+  const calculatePlates = (totalWeight) => {
+    let remaining = (totalWeight - 20) / 2;
+    if (remaining <= 0) return [];
+    const plates = [20, 10, 5, 2.5, 1.25];
+    const result = [];
+    for (let p of plates) {
+      let count = Math.floor(remaining / p);
+      if (count > 0) {
+        result.push({ weight: p, count });
+        remaining -= count * p;
+      }
+    }
+    return result;
+  };
 
   const formatTime = (totalSeconds) => {
     const h = Math.floor(totalSeconds / 3600);
@@ -271,7 +310,19 @@ export default function StudentWorkouts() {
   const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
   return (
-    <div className="workouts-page">
+    <div className="workouts-page" style={{ position: 'relative' }}>
+      
+      {/* Floating Rest Timer */}
+      {showRestTimer && (
+        <div style={{ position: 'fixed', bottom: '2rem', right: '2rem', background: 'var(--primary)', color: 'black', padding: '1rem 1.5rem', borderRadius: '50px', display: 'flex', alignItems: 'center', gap: '0.75rem', boxShadow: '0 4px 20px rgba(0,0,0,0.5)', zIndex: 50 }}>
+          <Timer size={24} />
+          <span style={{ fontSize: '1.5rem', fontWeight: 'bold', fontFamily: 'monospace' }}>{formatTime(restTimer)}</span>
+          <button onClick={() => { setShowRestTimer(false); setRestTimer(0); }} style={{ background: 'transparent', border: 'none', color: 'black', cursor: 'pointer', marginLeft: '0.5rem', display: 'flex' }}>
+            <X size={20} />
+          </button>
+        </div>
+      )}
+
       <div className="page-header">
         <div>
           <h1>Mis Rutinas</h1>
@@ -416,13 +467,13 @@ export default function StudentWorkouts() {
                               
                               <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem', marginTop: '1.25rem' }}>
                                 
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
                                   <div>
                                     <label style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)', display: 'block', marginBottom: '0.5rem' }}>Series</label>
                                     <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius)', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)' }}>
                                       <button type="button" onClick={() => handleSeriesChange(-1)} style={{ flex: 1, padding: '0.5rem', background: 'transparent', border: 'none', color: 'var(--primary)', fontWeight: 'bold', cursor: 'pointer' }}>-</button>
                                       <span style={{ padding: '0.5rem', fontWeight: 'bold', minWidth: '30px', textAlign: 'center' }}>{currentSeries}</span>
-                                      <button type="button" onClick={() => handleSeriesChange(1)} style={{ flex: 1, padding: '0.5rem', background: 'transparent', border: 'none', color: 'var(--primary)', fontWeight: 'bold', cursor: 'pointer' }}>+</button>
+                                      <button type="button" onClick={() => { handleSeriesChange(1); startRestTimer(90); }} style={{ flex: 1, padding: '0.5rem', background: 'transparent', border: 'none', color: 'var(--primary)', fontWeight: 'bold', cursor: 'pointer' }}>+</button>
                                     </div>
                                   </div>
 
@@ -434,10 +485,36 @@ export default function StudentWorkouts() {
                                       <button type="button" onClick={() => handleRepsChange(1)} style={{ flex: 1, padding: '0.5rem', background: 'transparent', border: 'none', color: 'var(--primary)', fontWeight: 'bold', cursor: 'pointer' }}>+</button>
                                     </div>
                                   </div>
+
+                                  <div>
+                                    <label style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)', display: 'block', marginBottom: '0.5rem' }}>RIR</label>
+                                    <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius)', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)' }}>
+                                      <select 
+                                        value={fb.rir !== undefined ? fb.rir : (exActualData.rir || '2')}
+                                        onChange={(e) => handleExerciseChange(routine.id, i, 'rir', e.target.value)}
+                                        style={{ width: '100%', padding: '0.5rem', background: 'transparent', color: 'white', border: 'none', textAlign: 'center', fontWeight: 'bold', appearance: 'none', cursor: 'pointer' }}
+                                      >
+                                        <option value="0" style={{color: 'black'}}>0</option>
+                                        <option value="1" style={{color: 'black'}}>1</option>
+                                        <option value="2" style={{color: 'black'}}>2</option>
+                                        <option value="3" style={{color: 'black'}}>3</option>
+                                        <option value="4" style={{color: 'black'}}>4</option>
+                                      </select>
+                                    </div>
+                                  </div>
                                 </div>
 
                                 <div>
-                                  <label style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)', display: 'block', marginBottom: '0.5rem' }}>Peso (kg)</label>
+                                  <label style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                                    <span>Peso (kg)</span>
+                                    <button 
+                                      type="button" 
+                                      onClick={() => setShowPlateCalc(showPlateCalc === `${routine.id}-${i}` ? null : `${routine.id}-${i}`)} 
+                                      style={{ background: 'transparent', border: 'none', color: 'var(--primary)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                                    >
+                                      <Dumbbell size={14}/> Discos
+                                    </button>
+                                  </label>
                                   <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius)', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)' }}>
                                     <button type="button" onClick={() => handleWeightChange(-5)} style={{ flex: 1, padding: '0.6rem 0.25rem', background: 'transparent', border: 'none', color: 'var(--muted-foreground)', fontWeight: 'bold', cursor: 'pointer', borderRight: '1px solid rgba(255,255,255,0.05)' }}>-5</button>
                                     <button type="button" onClick={() => handleWeightChange(-1)} style={{ flex: 1, padding: '0.6rem 0.25rem', background: 'transparent', border: 'none', color: 'var(--primary)', fontWeight: 'bold', cursor: 'pointer' }}>-1</button>
@@ -445,6 +522,23 @@ export default function StudentWorkouts() {
                                     <button type="button" onClick={() => handleWeightChange(1)} style={{ flex: 1, padding: '0.6rem 0.25rem', background: 'transparent', border: 'none', color: 'var(--primary)', fontWeight: 'bold', cursor: 'pointer' }}>+1</button>
                                     <button type="button" onClick={() => handleWeightChange(5)} style={{ flex: 1, padding: '0.6rem 0.25rem', background: 'transparent', border: 'none', color: 'var(--muted-foreground)', fontWeight: 'bold', cursor: 'pointer', borderLeft: '1px solid rgba(255,255,255,0.05)' }}>+5</button>
                                   </div>
+                                  
+                                  {showPlateCalc === `${routine.id}-${i}` && (
+                                    <div style={{ marginTop: '0.75rem', background: 'rgba(163, 230, 53, 0.1)', border: '1px solid rgba(163, 230, 53, 0.2)', padding: '0.75rem', borderRadius: '4px', fontSize: '0.85rem' }}>
+                                      <p style={{ margin: '0 0 0.5rem 0', color: 'var(--primary)', fontWeight: 'bold' }}>Armar barra de 20kg ({currentWeight}kg total):</p>
+                                      {currentWeight <= 20 ? (
+                                        <span style={{ color: 'var(--muted-foreground)' }}>Solo la barra.</span>
+                                      ) : calculatePlates(currentWeight).length === 0 ? (
+                                        <span style={{ color: 'var(--muted-foreground)' }}>Peso inválido para discos estandar.</span>
+                                      ) : (
+                                        <ul style={{ margin: 0, paddingLeft: '1.5rem', color: 'white' }}>
+                                          {calculatePlates(currentWeight).map((p, idx) => (
+                                            <li key={idx}><strong>{p.count}</strong> disco(s) de <strong>{p.weight}kg</strong> por lado</li>
+                                          ))}
+                                        </ul>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
 
                                 <div>
