@@ -118,7 +118,7 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            model: "meta-llama/llama-3.1-8b-instruct:free",
+            model: "openrouter/free",
             response_format: { type: "json_object" },
             messages: [
               { role: "system", content: systemPrompt },
