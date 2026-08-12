@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Users, Activity, TrendingUp, Dumbbell, ClipboardList, CheckCircle, Scale, Droplets, Sparkles, TrendingDown, Minus, Play } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, getDoc, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { ResponsiveContainer, AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, Legend } from 'recharts';
 
@@ -20,6 +20,8 @@ export default function Dashboard() {
   const [insights, setInsights] = useState([]);
   const [loadingAI, setLoadingAI] = useState(false);
   const [waterGlasses, setWaterGlasses] = useState(0);
+  const [currentStreak, setCurrentStreak] = useState(0);
+  const [leaderboard, setLeaderboard] = useState([]);
 
   // UI state
   const [selectedExercise, setSelectedExercise] = useState('');
@@ -59,7 +61,99 @@ export default function Dashboard() {
           // We want to fetch personal workout data for everyone, not just students.
           const qW = query(collection(db, "workouts"), where("studentId", "==", currentUser.uid));
           const snapW = await getDocs(qW);
-          setWorkouts(snapW.docs.map(d => d.data()));
+          const allWorkouts = snapW.docs.map(d => d.data());
+          setWorkouts(allWorkouts);
+
+          // Calculate Streak (Consecutive Weeks)
+          const completedDates = allWorkouts.filter(w => w.completed).map(w => new Date(w.date || w.completedAt));
+          completedDates.sort((a,b) => b - a);
+          
+          let streakCount = 0;
+          if (completedDates.length > 0) {
+            const getMonday = (d) => {
+              const date = new Date(d);
+              const day = date.getDay();
+              const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+              return new Date(date.setDate(diff)).setHours(0,0,0,0);
+            };
+            
+            const uniqueWeeks = [...new Set(completedDates.map(d => getMonday(d)))];
+            const currentWeek = getMonday(new Date());
+            
+            if (uniqueWeeks[0] === currentWeek || uniqueWeeks[0] === currentWeek - 7*86400000) {
+              streakCount = 1;
+              let expectedWeek = uniqueWeeks[0];
+              for (let i = 1; i < uniqueWeeks.length; i++) {
+                if (uniqueWeeks[i] === expectedWeek - 7*86400000) {
+                  streakCount++;
+                  expectedWeek -= 7*86400000;
+                } else {
+                  break;
+                }
+              }
+            }
+          }
+          setCurrentStreak(streakCount);
+
+          // Dynamic Leaderboard
+          try {
+            const userDocSnap = await getDoc(doc(db, "users", currentUser.uid));
+            if (userDocSnap.exists()) {
+              const userData = userDocSnap.data();
+              const trainerId = userData.trainerId || currentUser.uid;
+              
+              const qStudents = query(collection(db, "users"), where("trainerId", "==", trainerId));
+              const snapStudents = await getDocs(qStudents);
+              const studentMap = {};
+              snapStudents.docs.forEach(d => { 
+                const name = d.data().name || d.data().email.split('@')[0];
+                studentMap[d.id] = { name, initial: name[0].toUpperCase(), uid: d.id };
+              });
+              
+              const sevenDaysAgo = new Date();
+              sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+              
+              const qAllW = query(collection(db, "workouts"), where("trainerId", "==", trainerId));
+              const snapAllW = await getDocs(qAllW);
+              
+              const studentVolumes = {};
+              snapAllW.docs.forEach(d => {
+                const w = d.data();
+                if (w.completed && new Date(w.date || w.completedAt) >= sevenDaysAgo && studentMap[w.studentId]) {
+                  let vol = 0;
+                  if (w.actualData) {
+                    Object.values(w.actualData).forEach(ex => {
+                      if (ex.done) {
+                        const s = parseInt(ex.reps?.split('x')[0]) || 0;
+                        const r = parseInt(ex.reps?.split('x')[1]) || 0;
+                        const wt = parseFloat(ex.weight) || 0;
+                        vol += (s * r * wt);
+                      }
+                    });
+                  }
+                  if (vol > 0) studentVolumes[w.studentId] = (studentVolumes[w.studentId] || 0) + vol;
+                }
+              });
+              
+              // Include students with 0 volume too
+              Object.keys(studentMap).forEach(uid => {
+                if (!studentVolumes[uid]) studentVolumes[uid] = 0;
+              });
+
+              const leaderboardArr = Object.keys(studentVolumes)
+                .map(uid => ({
+                  uid,
+                  name: studentMap[uid].name,
+                  initial: studentMap[uid].initial,
+                  volume: studentVolumes[uid]
+                }))
+                .filter(u => u.volume > 0 || u.uid === currentUser.uid)
+                .sort((a,b) => b.volume - a.volume)
+                .slice(0, 5);
+              
+              setLeaderboard(leaderboardArr);
+            }
+          } catch(e) { console.error("Error loading leaderboard:", e); }
 
           const qE = query(collection(db, "exercises"));
           const snapE = await getDocs(qE);
@@ -385,9 +479,21 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
 
   return (
     <div className="dashboard-container">
-      <div className="dashboard-header">
-        <h1>{userRole === 'trainer' ? 'Resumen de Entrenamientos' : userRole === 'student' ? 'Mi Progreso Físico' : 'Resumen General'}</h1>
-        <p>{userRole === 'trainer' ? 'Métricas de tus alumnos y rendimiento.' : userRole === 'student' ? 'Revisa tu evolución de fuerza y medidas corporales.' : 'Estadísticas y actividad reciente de la plataforma.'}</p>
+      <div className="dashboard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
+        <div>
+          <h1>{userRole === 'trainer' ? 'Resumen de Entrenamientos' : userRole === 'student' ? 'Mi Progreso Físico' : 'Resumen General'}</h1>
+          <p>{userRole === 'trainer' ? 'Métricas de tus alumnos y rendimiento.' : userRole === 'student' ? 'Revisa tu evolución de fuerza y medidas corporales.' : 'Estadísticas y actividad reciente de la plataforma.'}</p>
+        </div>
+        
+        {userRole === 'student' && currentStreak > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '0.5rem 1rem', borderRadius: '50px', animation: 'fade-up 0.5s ease-out' }}>
+            <span style={{ fontSize: '1.75rem', filter: 'drop-shadow(0 0 8px rgba(239,68,68,0.6))' }}>🔥</span>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span style={{ color: '#ef4444', fontWeight: 'bold', lineHeight: '1.2', fontSize: '1.1rem' }}>{currentStreak} Semanas</span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--muted-foreground)', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 'bold' }}>Racha Activa</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {userRole !== 'student' && (
@@ -596,32 +702,29 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
             <h3 style={{ color: '#eab308', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
               <span>🏆</span> Clasificación Semanal
             </h3>
-            <p style={{fontSize: '0.85rem', color: 'var(--muted-foreground)', marginBottom: '1.5rem'}}>Top de volumen levantado en tu gimnasio.</p>
+            <p style={{fontSize: '0.85rem', color: 'var(--muted-foreground)', marginBottom: '1.5rem'}}>Top de volumen levantado en tu equipo (Últimos 7 días).</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(234, 179, 8, 0.15)', padding: '0.75rem', borderRadius: 'var(--radius)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <span style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#eab308' }}>1</span>
-                  <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#eab308', color: 'black', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>T</div>
-                  <span style={{ fontWeight: 'bold' }}>Tú</span>
-                </div>
-                <span style={{ fontWeight: 'bold', color: '#eab308' }}>{Math.floor(volumeData.reduce((acc, curr) => acc + curr.value, 0) * 1.2)} kg</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255, 255, 255, 0.05)', padding: '0.75rem', borderRadius: 'var(--radius)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <span style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#94a3b8' }}>2</span>
-                  <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#94a3b8', color: 'black', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>M</div>
-                  <span>Marcos R.</span>
-                </div>
-                <span style={{ color: '#94a3b8' }}>{Math.floor(volumeData.reduce((acc, curr) => acc + curr.value, 0) * 0.9 + 1500)} kg</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255, 255, 255, 0.05)', padding: '0.75rem', borderRadius: 'var(--radius)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                  <span style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#b45309' }}>3</span>
-                  <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#b45309', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>S</div>
-                  <span>Sofía P.</span>
-                </div>
-                <span style={{ color: '#b45309' }}>{Math.floor(volumeData.reduce((acc, curr) => acc + curr.value, 0) * 0.7 + 1000)} kg</span>
-              </div>
+              {leaderboard.length === 0 ? (
+                <div style={{ color: 'var(--muted-foreground)', textAlign: 'center', padding: '1rem' }}>No hay datos suficientes esta semana.</div>
+              ) : (
+                leaderboard.map((user, idx) => {
+                  const isMe = user.uid === currentUser.uid;
+                  const colors = ['#eab308', '#94a3b8', '#b45309', '#3b82f6', '#a855f7'];
+                  const c = colors[idx] || '#ffffff';
+                  const textColor = (idx === 1) ? 'black' : 'white';
+                  
+                  return (
+                    <div key={user.uid} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: isMe ? 'rgba(234, 179, 8, 0.15)' : 'rgba(255, 255, 255, 0.05)', padding: '0.75rem', borderRadius: 'var(--radius)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        <span style={{ fontSize: '1.25rem', fontWeight: 'bold', color: c, width: '20px', textAlign: 'center' }}>{idx + 1}</span>
+                        <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: c, color: textColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}>{user.initial}</div>
+                        <span style={{ fontWeight: isMe ? 'bold' : 'normal' }}>{isMe ? 'Tú' : user.name}</span>
+                      </div>
+                      <span style={{ fontWeight: isMe ? 'bold' : 'normal', color: c }}>{Math.floor(user.volume).toLocaleString()} kg</span>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
