@@ -306,7 +306,7 @@ export default function Dashboard() {
     const topPercentage = Math.round((topMuscle.value / totalExercises) * 100);
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '1rem' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         <div style={{ width: '100%', height: '280px', marginTop: '1rem' }}>
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
