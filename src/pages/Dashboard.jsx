@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Activity, TrendingUp, Dumbbell, ClipboardList, CheckCircle, Scale, Droplets, Sparkles, TrendingDown, Minus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { ResponsiveContainer, AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, Legend } from 'recharts';
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -18,6 +18,7 @@ export default function Dashboard() {
   const [studentStats, setStudentStats] = useState({ weight: '-', fat: '-', rms: 0 });
   const [insights, setInsights] = useState([]);
   const [loadingAI, setLoadingAI] = useState(false);
+  const [waterGlasses, setWaterGlasses] = useState(0);
 
   // UI state
   const [selectedExercise, setSelectedExercise] = useState('');
@@ -49,6 +50,10 @@ export default function Dashboard() {
           
           const metrics = logs.filter(l => l.type === 'Medida');
           setMetricLogs(metrics);
+
+          const todayStr = new Date().toISOString().split('T')[0];
+          const waterLogsToday = logs.filter(l => l.type === 'Water' && l.createdAt.startsWith(todayStr));
+          setWaterGlasses(waterLogsToday.reduce((sum, l) => sum + parseInt(l.value), 0));
 
           // We want to fetch personal workout data for everyone, not just students.
           const qW = query(collection(db, "workouts"), where("studentId", "==", currentUser.uid));
@@ -134,6 +139,74 @@ export default function Dashboard() {
   };
 
   const uniqueExercises = [...new Set(rmLogs.map(l => l.exerciseOrBodyPart))];
+
+  const handleAddWater = async () => {
+    setWaterGlasses(prev => prev + 1);
+    await addDoc(collection(db, "progress_logs"), {
+      studentId: currentUser.uid, type: 'Water', value: '1', unit: 'vasos', createdAt: new Date().toISOString()
+    });
+  };
+
+  const volumeData = workouts.reduce((acc, w) => {
+    const date = new Date(w.date).toLocaleDateString('es-ES', { month: 'short', day: 'numeric' });
+    let vol = 0;
+    if (w.actualData) {
+      Object.values(w.actualData).forEach(ex => {
+        if (ex.done) {
+          const s = parseInt(ex.reps?.split('x')[0]) || 0;
+          const r = parseInt(ex.reps?.split('x')[1]) || 0;
+          const wt = parseFloat(ex.weight) || 0;
+          vol += (s * r * wt);
+        }
+      });
+    }
+    if (vol > 0) acc.push({ date, value: vol, createdAt: w.date });
+    return acc;
+  }, []).sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+  const renderRecoveryMap = () => {
+    const now = new Date();
+    const fatigueMap = {}; 
+    workouts.forEach(w => {
+      if (w.completed) {
+        const wDate = new Date(w.completedAt || w.date);
+        const hoursDiff = (now - wDate) / (1000 * 60 * 60);
+        if (hoursDiff <= 72 && w.exercises) {
+          w.exercises.forEach(ex => {
+            const muscle = exercisesLib[ex.exerciseId] || 'Otros';
+            if (!fatigueMap[muscle] || hoursDiff < fatigueMap[muscle]) {
+              fatigueMap[muscle] = hoursDiff;
+            }
+          });
+        }
+      }
+    });
+
+    const muscles = Object.keys(fatigueMap);
+    if (muscles.length === 0) return null;
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '1rem', padding: '1rem', background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius)' }}>
+        <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: 'var(--muted-foreground)' }}>Estado Muscular (72h)</h4>
+        {muscles.map(m => {
+          const h = fatigueMap[m];
+          let color = '#10b981';
+          let label = 'Recuperado';
+          if (h <= 24) { color = '#ef4444'; label = 'Fatigado'; }
+          else if (h <= 48) { color = '#eab308'; label = 'Recuperándose'; }
+          return (
+            <div key={m} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.85rem' }}>{m}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--muted-foreground)' }}>{label}</span>
+                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: color }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
   const renderChart = (dataset, labelSuffix, isArea = false) => {
     if (!dataset || dataset.length === 0) {
@@ -397,6 +470,22 @@ export default function Dashboard() {
         </button>
       )}
 
+      {/* Water Tracker */}
+      <div className="panel glass" style={{ marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid rgba(59, 130, 246, 0.3)', background: 'linear-gradient(to right, rgba(0,0,0,0.6), rgba(59, 130, 246, 0.05))' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{ background: 'rgba(59, 130, 246, 0.15)', padding: '0.75rem', borderRadius: '50%', color: '#3b82f6' }}>
+            <Droplets size={24} />
+          </div>
+          <div>
+            <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#3b82f6' }}>Hidratación Diaria</h3>
+            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--muted-foreground)' }}>{waterGlasses} vasos hoy</p>
+          </div>
+        </div>
+        <button className="btn-primary" onClick={handleAddWater} style={{ background: '#3b82f6', color: 'white', padding: '0.5rem 1rem' }}>
+          + Tomar Agua
+        </button>
+      </div>
+
       {/* Insights Panel for all users */}
       <div className="panel glass" style={{ marginBottom: '1rem', border: '1px solid rgba(168, 85, 247, 0.3)', background: 'linear-gradient(to right, rgba(0,0,0,0.6), rgba(168, 85, 247, 0.05))' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.25rem' }}>
@@ -439,6 +528,7 @@ export default function Dashboard() {
               <option value="rm" style={{background: 'var(--background)'}}>Evolución de Fuerza (RM)</option>
               <option value="weight" style={{background: 'var(--background)'}}>Evolución de Peso Corporal</option>
               <option value="fat" style={{background: 'var(--background)'}}>Evolución de % Grasa</option>
+              <option value="volume" style={{background: 'var(--background)'}}>Volumen Semanal (Tonelaje)</option>
             </select>
             
             {chartMode === 'rm' && uniqueExercises.length > 0 && (
@@ -466,6 +556,7 @@ export default function Dashboard() {
             {chartMode === 'rm' && renderChart(rmLogs.filter(l => l.exerciseOrBodyPart === selectedExercise), 'kg', false)}
             {chartMode === 'weight' && renderChart(metricLogs.filter(l => l.metric === 'Peso Corporal'), 'kg', true)}
             {chartMode === 'fat' && renderChart(metricLogs.filter(l => l.metric === '% Grasa'), '%', true)}
+            {chartMode === 'volume' && renderChart(volumeData, 'kg', true)}
           </div>
         </div>
 
@@ -473,6 +564,7 @@ export default function Dashboard() {
           <h3>Trabajo por Músculos</h3>
           <p style={{fontSize: '0.85rem', color: 'var(--muted-foreground)'}}>Frecuencia de entrenamiento por grupo muscular.</p>
           {renderMuscleBreakdown()}
+          {renderRecoveryMap()}
         </div>
       </div>
 
