@@ -3,7 +3,7 @@ import { Users, Activity, TrendingUp, Dumbbell, ClipboardList, CheckCircle, Scal
 import { useAuth } from '../context/AuthContext';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { ResponsiveContainer, AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
+import { ResponsiveContainer, AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, Legend } from 'recharts';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export default function Dashboard() {
@@ -195,35 +195,79 @@ export default function Dashboard() {
   };
 
   const renderMuscleBreakdown = () => {
+    // Filtrar rutinas de los últimos 7 días
+    const oneWeekAgo = new Date();
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+
+    const recentWorkouts = workouts.filter(w => {
+      if (!w.completed) return false;
+      const wDate = new Date(w.date || w.completedAt);
+      return wDate >= oneWeekAgo;
+    });
+
     const muscleCounts = {};
-    workouts.filter(w => w.completed).forEach(w => {
+    let totalExercises = 0;
+
+    recentWorkouts.forEach(w => {
       if (w.exercises) {
         w.exercises.forEach(ex => {
           const muscle = exercisesLib[ex.exerciseId] || 'Otros';
           muscleCounts[muscle] = (muscleCounts[muscle] || 0) + 1;
+          totalExercises++;
         });
       }
     });
 
-    const entries = Object.entries(muscleCounts).sort((a,b) => b[1] - a[1]);
+    const entries = Object.entries(muscleCounts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a,b) => b.value - a.value);
 
     if (entries.length === 0) {
-      return <div style={{color:'var(--muted-foreground)', marginTop: '1rem'}}>Completa rutinas para ver tus estadísticas musculares.</div>;
+      return <div style={{color:'var(--muted-foreground)', marginTop: '1rem'}}>Completa rutinas esta semana para ver tu distribución gráfica.</div>;
     }
 
-    const maxCount = Math.max(...entries.map(e => e[1]));
+    const COLORS = ['#10b981', '#3b82f6', '#a855f7', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4', '#8b5cf6'];
+    const topMuscle = entries[0];
+    const topPercentage = Math.round((topMuscle.value / totalExercises) * 100);
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', marginTop: '1.5rem' }}>
-        {entries.map(([muscle, count]) => (
-          <div key={muscle} style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <span style={{ width: '80px', fontSize: '0.85rem', fontWeight: '500' }}>{muscle}</span>
-            <div style={{ flex: 1, background: 'rgba(255,255,255,0.05)', height: '8px', borderRadius: '4px', overflow: 'hidden' }}>
-              <div style={{ width: `${(count / maxCount) * 100}%`, background: 'var(--primary)', height: '100%', borderRadius: '4px' }}></div>
-            </div>
-            <span style={{ fontSize: '0.85rem', color: 'var(--primary)', width: '30px', textAlign: 'right', fontWeight: 'bold' }}>{count}</span>
-          </div>
-        ))}
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '1rem' }}>
+        <div style={{ width: '100%', height: '280px', marginTop: '1rem' }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={entries}
+                cx="50%"
+                cy="45%"
+                innerRadius={60}
+                outerRadius={85}
+                paddingAngle={4}
+                dataKey="value"
+                stroke="none"
+              >
+                {entries.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip 
+                formatter={(value, name) => {
+                  const perc = Math.round((value / totalExercises) * 100);
+                  return [`${perc}% (${value} ej.)`, name];
+                }}
+                contentStyle={{ backgroundColor: 'var(--background)', borderColor: 'var(--border)', borderRadius: '8px', color: 'var(--foreground)' }}
+                itemStyle={{ fontWeight: 'bold' }}
+              />
+              <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '0.85rem' }}/>
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+        
+        <div style={{ padding: '1rem', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius)', borderLeft: `4px solid ${COLORS[0]}` }}>
+          <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--muted-foreground)', lineHeight: '1.5' }}>
+            <strong style={{ color: 'white' }}>Análisis Semanal:</strong> Tu entrenamiento está enfocado principalmente en <strong style={{ color: COLORS[0] }}>{topMuscle.name}</strong>, que representa el <strong>{topPercentage}%</strong> de tu volumen de esta semana. 
+            {topPercentage > 50 ? ' Considera incluir otros grupos musculares para evitar desbalances.' : ' Tienes una distribución bastante equilibrada.'}
+          </p>
+        </div>
       </div>
     );
   };
