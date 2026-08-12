@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import '../styles/global.css';
 import NotificationPanel from './NotificationPanel';
+import AICoachChat from './AICoachChat';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
@@ -261,6 +262,9 @@ export default function Layout() {
         <div className="page-content">
           <Outlet />
         </div>
+        
+        {/* Global AI Coach Assistant */}
+        <AICoachChat />
       </main>
 
       <style>{`

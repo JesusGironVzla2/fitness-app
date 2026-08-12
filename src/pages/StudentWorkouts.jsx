@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, updateDoc, doc, addDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
-import { Calendar, CheckCircle, MessageSquare, Plus, Dumbbell, ChevronLeft, ChevronRight, Timer, X } from 'lucide-react';
+import { Calendar, CheckCircle, MessageSquare, Plus, Dumbbell, ChevronLeft, ChevronRight, Timer, X, Sparkles } from 'lucide-react';
 import { getDoc } from 'firebase/firestore';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import '../styles/global.css';
 
 export default function StudentWorkouts() {
@@ -23,6 +24,11 @@ export default function StudentWorkouts() {
   const [showCreateExerciseModal, setShowCreateExerciseModal] = useState(false);
   const [newExercise, setNewExercise] = useState({ name: '', targetMuscle: 'Pecho', description: '', imageUrl: '' });
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  
+  // AI Generator State
+  const [showAIGeneratorModal, setShowAIGeneratorModal] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
   
   // Timer state
   const [activeSession, setActiveSession] = useState(null);
@@ -216,6 +222,89 @@ export default function StudentWorkouts() {
     }
   };
 
+  const handleGenerateAILiveWorkout = async (e) => {
+    e.preventDefault();
+    if (!aiPrompt.trim()) return;
+    
+    setIsGenerating(true);
+    try {
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      if (!apiKey) {
+        alert("API Key de Gemini no encontrada. Configúrala en .env");
+        setIsGenerating(false);
+        return;
+      }
+      
+      // Fetch exercises if not loaded
+      let currentExercises = exercises;
+      if (currentExercises.length === 0) {
+        const q = query(collection(db, "exercises"));
+        const snap = await getDocs(q);
+        currentExercises = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setExercises(currentExercises);
+      }
+
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+      const exercisesList = currentExercises.map(ex => `${ex.id}: ${ex.name} (${ex.targetMuscle})`).join('\n');
+      
+      const prompt = `Eres un experto entrenador personal. El usuario pide: "${aiPrompt}".
+Basado en los siguientes ejercicios disponibles:
+${exercisesList}
+
+Crea una rutina óptima. Devuelve SOLO un objeto JSON con este formato exacto (sin markdown, sin explicaciones):
+{
+  "name": "Nombre de la rutina sugerida",
+  "exercises": [
+    {
+      "exerciseId": "ID_DEL_EJERCICIO",
+      "name": "Nombre del Ejercicio",
+      "sets": 4,
+      "reps": 12
+    }
+  ]
+}`;
+
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      let text = response.text();
+      text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+      
+      const aiRoutine = JSON.parse(text);
+
+      let finalTrainerId = currentUser.uid;
+      let studentName = currentUser.displayName || currentUser.email || "Alumno";
+      const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        if (data.role === 'student' || data.role === 'user') {
+          finalTrainerId = data.trainerId || currentUser.uid;
+          studentName = data.name || studentName;
+        }
+      }
+
+      await addDoc(collection(db, "workouts"), {
+        studentId: currentUser.uid,
+        trainerId: finalTrainerId,
+        date: selectedDate,
+        name: aiRoutine.name || `Rutina AI - ${new Date(selectedDate + 'T12:00:00Z').toLocaleDateString('es-ES')}`,
+        exercises: aiRoutine.exercises,
+        createdAt: new Date().toISOString(),
+        aiGenerated: true
+      });
+
+      setShowAIGeneratorModal(false);
+      setAiPrompt("");
+      fetchWorkouts();
+    } catch (err) {
+      console.error("Error generating AI workout:", err);
+      alert("Hubo un error generando la rutina. Intenta de nuevo.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   const handleCreateExerciseInline = async (e) => {
     e.preventDefault();
     try {
@@ -328,10 +417,16 @@ export default function StudentWorkouts() {
           <h1>Mis Rutinas</h1>
           <p>Tu plan de entrenamiento semanal asignado por tu entrenador.</p>
         </div>
-        <button className="btn-primary" onClick={() => { fetchExercises(); setShowModal(true); }}>
-          <Plus size={20} />
-          <span>Entrenamiento Libre</span>
-        </button>
+        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+          <button className="btn-secondary" onClick={() => { fetchExercises(); setShowAIGeneratorModal(true); }} style={{ borderColor: '#a855f7', color: '#a855f7' }}>
+            <Sparkles size={20} />
+            <span>Generar con AI</span>
+          </button>
+          <button className="btn-primary" onClick={() => { fetchExercises(); setShowModal(true); }}>
+            <Plus size={20} />
+            <span>Entrenamiento Libre</span>
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -507,18 +602,36 @@ export default function StudentWorkouts() {
                                 <div>
                                   <label style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                                     <span>Peso (kg)</span>
-                                    <button 
-                                      type="button" 
-                                      onClick={() => setShowPlateCalc(showPlateCalc === `${routine.id}-${i}` ? null : `${routine.id}-${i}`)} 
-                                      style={{ background: 'transparent', border: 'none', color: 'var(--primary)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-                                    >
-                                      <Dumbbell size={14}/> Discos
-                                    </button>
+                                    <div style={{ display: 'flex', gap: '0.75rem' }}>
+                                      <button 
+                                        type="button" 
+                                        onClick={() => {
+                                          const valKg = Math.round((currentWeight / 2.20462) * 10) / 10;
+                                          handleExerciseChange(routine.id, i, 'weight', valKg);
+                                        }} 
+                                        style={{ background: 'transparent', border: 'none', color: 'var(--muted-foreground)', cursor: 'pointer', padding: 0, fontSize: '0.8rem', display: 'flex', alignItems: 'center' }}
+                                        title="Convertir el valor actual de Libras a Kilos"
+                                      >
+                                        LBS → KG
+                                      </button>
+                                      <button 
+                                        type="button" 
+                                        onClick={() => setShowPlateCalc(showPlateCalc === `${routine.id}-${i}` ? null : `${routine.id}-${i}`)} 
+                                        style={{ background: 'transparent', border: 'none', color: 'var(--primary)', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                                      >
+                                        <Dumbbell size={14}/> Discos
+                                      </button>
+                                    </div>
                                   </label>
                                   <div style={{ display: 'flex', alignItems: 'center', background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius)', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.05)' }}>
                                     <button type="button" onClick={() => handleWeightChange(-5)} style={{ flex: 1, padding: '0.6rem 0.25rem', background: 'transparent', border: 'none', color: 'var(--muted-foreground)', fontWeight: 'bold', cursor: 'pointer', borderRight: '1px solid rgba(255,255,255,0.05)' }}>-5</button>
                                     <button type="button" onClick={() => handleWeightChange(-1)} style={{ flex: 1, padding: '0.6rem 0.25rem', background: 'transparent', border: 'none', color: 'var(--primary)', fontWeight: 'bold', cursor: 'pointer' }}>-1</button>
-                                    <span style={{ padding: '0.5rem', fontWeight: 'bold', minWidth: '50px', textAlign: 'center', fontSize: '1.1rem' }}>{currentWeight}</span>
+                                    <input 
+                                      type="number"
+                                      value={currentWeight || ''}
+                                      onChange={(e) => handleExerciseChange(routine.id, i, 'weight', e.target.value === '' ? 0 : parseFloat(e.target.value))}
+                                      style={{ padding: '0.5rem', fontWeight: 'bold', width: '60px', textAlign: 'center', fontSize: '1.1rem', background: 'transparent', border: 'none', color: 'white', outline: 'none' }}
+                                    />
                                     <button type="button" onClick={() => handleWeightChange(1)} style={{ flex: 1, padding: '0.6rem 0.25rem', background: 'transparent', border: 'none', color: 'var(--primary)', fontWeight: 'bold', cursor: 'pointer' }}>+1</button>
                                     <button type="button" onClick={() => handleWeightChange(5)} style={{ flex: 1, padding: '0.6rem 0.25rem', background: 'transparent', border: 'none', color: 'var(--muted-foreground)', fontWeight: 'bold', cursor: 'pointer', borderLeft: '1px solid rgba(255,255,255,0.05)' }}>+5</button>
                                   </div>
@@ -793,6 +906,51 @@ export default function StudentWorkouts() {
               <div className="modal-actions">
                 <button type="button" className="btn-secondary" onClick={() => setShowCreateExerciseModal(false)}>Cancelar</button>
                 <button type="submit" className="btn-primary">Guardar Ejercicio</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showAIGeneratorModal && (
+        <div className="modal-overlay" style={{ zIndex: 110 }}>
+          <div className="modal glass" style={{ border: '1px solid rgba(168, 85, 247, 0.5)' }}>
+            <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#a855f7' }}>
+              <Sparkles size={24} />
+              Entrenador AI
+            </h2>
+            <p style={{ color: 'var(--muted-foreground)', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
+              Dile a la inteligencia artificial qué tipo de rutina necesitas hoy y te la generará en segundos, basada en los ejercicios de tu gimnasio.
+            </p>
+            <form onSubmit={handleGenerateAILiveWorkout} className="modal-form">
+              <div className="input-group">
+                <label>¿Qué necesitas?</label>
+                <textarea 
+                  className="input-field"
+                  placeholder="Ej: Tengo 30 minutos, quiero hacer pecho y tríceps enfocado en volumen. No quiero usar mancuernas hoy." 
+                  value={aiPrompt}
+                  onChange={(e) => setAiPrompt(e.target.value)}
+                  rows="4"
+                  required
+                  disabled={isGenerating}
+                />
+              </div>
+              <div className="input-group">
+                <label>Fecha de la Rutina</label>
+                <input 
+                  type="date" 
+                  className="input-field"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  required
+                  disabled={isGenerating}
+                />
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn-secondary" onClick={() => setShowAIGeneratorModal(false)} disabled={isGenerating}>Cancelar</button>
+                <button type="submit" className="btn-primary" style={{ background: '#a855f7', color: 'white' }} disabled={isGenerating}>
+                  {isGenerating ? 'Creando Magia...' : 'Generar Rutina ✨'}
+                </button>
               </div>
             </form>
           </div>
