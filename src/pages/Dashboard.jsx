@@ -329,12 +329,9 @@ export default function Dashboard() {
           className="btn-secondary"
           style={{ width: 'fit-content', margin: '0 auto' }}
           onClick={async () => {
-            if (!window.confirm("¿Inyectar datos de prueba en el primer alumno?")) return;
+            if (!window.confirm("¿Inyectar datos de prueba en tu propio historial?")) return;
             const { addDoc } = await import('firebase/firestore');
-            const q = query(collection(db, "users"), where("role", "==", "student"));
-            const snap = await getDocs(q);
-            if (snap.empty) return alert("No hay alumnos.");
-            const studentId = snap.docs[0].id;
+            const studentId = currentUser.uid;
             
             const now = new Date();
             
