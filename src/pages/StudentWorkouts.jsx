@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, updateDoc, doc, addDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
-import { Calendar, CheckCircle, MessageSquare, Plus, Dumbbell, ChevronLeft, ChevronRight, Timer, X, Sparkles, Share2, Instagram } from 'lucide-react';
+import { Calendar, CheckCircle, MessageSquare, Plus, Dumbbell, ChevronLeft, ChevronRight, Timer, X, Sparkles, Share2 } from 'lucide-react';
 import { getDoc } from 'firebase/firestore';
 import html2canvas from 'html2canvas';
 import '../styles/global.css';
@@ -508,7 +508,7 @@ Formato requerido:
       {shareRoutine && (
         <div className="modal-overlay" style={{ zIndex: 100 }}>
           <div className="modal glass" style={{ maxWidth: '400px', width: '100%', padding: '2rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <h2 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Instagram color="#ec4899" /> Compartir Logro</h2>
+            <h2 style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Share2 color="#ec4899" /> Compartir Logro</h2>
             
             {/* Elemento a capturar */}
             <div 
