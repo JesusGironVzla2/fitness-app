@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, Activity, TrendingUp, Dumbbell, ClipboardList, CheckCircle, Scale, Droplets, Sparkles, TrendingDown, Minus, Play } from 'lucide-react';
+import { Users, Activity, TrendingUp, Dumbbell, ClipboardList, CheckCircle, Scale, Droplets, Sparkles, TrendingDown, Minus, Play, Plus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { collection, query, where, getDocs, addDoc, getDoc, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -23,12 +23,19 @@ export default function Dashboard() {
   const [insights, setInsights] = useState([]);
   const [loadingAI, setLoadingAI] = useState(false);
   const [waterGlasses, setWaterGlasses] = useState(0);
+  const [allExerciseNames, setAllExerciseNames] = useState([]);
+  const [showQuickRmModal, setShowQuickRmModal] = useState(false);
+  const [quickRmValue, setQuickRmValue] = useState('');
+  const [quickRmReps, setQuickRmReps] = useState('');
+  const [showQuickWeightModal, setShowQuickWeightModal] = useState(false);
+  const [quickWeightValue, setQuickWeightValue] = useState('');
   const [currentStreak, setCurrentStreak] = useState(0);
   const [leaderboard, setLeaderboard] = useState([]);
 
   // UI state
   const [selectedExercise, setSelectedExercise] = useState('');
-  const [chartMode, setChartMode] = useState('rm'); // 'rm', 'weight', 'fat'
+  const [selectedVolumeMuscle, setSelectedVolumeMuscle] = useState('Todos');
+  const [chartMode, setChartMode] = useState('rm'); // 'rm', 'weight', 'fat', 'volume'
 
   useEffect(() => {
     if (userRole === 'trainer' && currentUser) {
@@ -161,10 +168,15 @@ export default function Dashboard() {
           const qE = query(collection(db, "exercises"));
           const snapE = await getDocs(qE);
           const exMap = {};
+          const names = [];
           snapE.docs.forEach(doc => {
             exMap[doc.id] = doc.data().targetMuscle;
+            if (doc.data().name) names.push(doc.data().name);
           });
           setExercisesLib(exMap);
+          
+          const uniqueNames = [...new Set(names)].sort();
+          setAllExerciseNames(uniqueNames);
           
           const lastWeight = metrics.filter(m => m.metric === 'Peso Corporal').pop();
           const lastFat = metrics.filter(m => m.metric === '% Grasa').pop();
@@ -181,9 +193,10 @@ export default function Dashboard() {
           setInsights(newInsights);
           setLoadingAI(false);
           
-          if (rms.length > 0) {
-            const uniqueExercises = [...new Set(rms.map(l => l.exerciseOrBodyPart))];
-            setSelectedExercise(uniqueExercises[0]);
+          if (uniqueNames.length > 0 && !selectedExercise) {
+            setSelectedExercise(uniqueNames[0]);
+          } else if (rms.length > 0 && !selectedExercise) {
+            setSelectedExercise(rms[0].exerciseOrBodyPart);
           }
         } catch(e) {}
       };
@@ -251,7 +264,49 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
     return newInsights.reverse().slice(0, 3);
   };
 
-  const uniqueExercises = [...new Set(rmLogs.map(l => l.exerciseOrBodyPart))];
+  const uniqueExercises = allExerciseNames.length > 0 ? allExerciseNames : [...new Set(rmLogs.map(l => l.exerciseOrBodyPart))];
+
+  const handleQuickLogRm = async (e) => {
+    e.preventDefault();
+    try {
+      await addDoc(collection(db, "progress_logs"), {
+        studentId: currentUser.uid,
+        type: "RM",
+        exerciseOrBodyPart: selectedExercise,
+        value: quickRmValue,
+        unit: "kg",
+        notes: `Añadido rápido desde Dashboard (${quickRmValue}kg x ${quickRmReps} reps)`,
+        createdAt: new Date().toISOString()
+      });
+      setShowQuickRmModal(false);
+      setQuickRmValue('');
+      setQuickRmReps('');
+      // Force reload by fetching logs again (or user can just refresh, but ideally we refresh state)
+      window.location.reload(); 
+    } catch(err) {
+      console.error(err);
+    }
+  };
+
+  const handleQuickLogWeight = async (e) => {
+    e.preventDefault();
+    try {
+      await addDoc(collection(db, "progress_logs"), {
+        studentId: currentUser.uid,
+        type: "Medida",
+        metric: "Peso Corporal",
+        value: quickWeightValue,
+        unit: "kg",
+        notes: "Añadido rápido desde Dashboard",
+        createdAt: new Date().toISOString()
+      });
+      setShowQuickWeightModal(false);
+      setQuickWeightValue('');
+      window.location.reload();
+    } catch(err) {
+      console.error(err);
+    }
+  };
 
   const handleAddWater = async () => {
     setWaterGlasses(prev => prev + 1);
@@ -260,22 +315,36 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
     });
   };
 
-  const volumeData = workouts.reduce((acc, w) => {
-    const date = new Date(w.date).toLocaleDateString('es-ES', { month: 'short', day: 'numeric' });
-    let vol = 0;
-    if (w.actualData) {
-      Object.values(w.actualData).forEach(ex => {
-        if (ex.done) {
-          const s = parseInt(ex.reps?.split('x')[0]) || 0;
-          const r = parseInt(ex.reps?.split('x')[1]) || 0;
-          const wt = parseFloat(ex.weight) || 0;
-          vol += (s * r * wt);
+  const rawVolumeData = {};
+  workouts.forEach(w => {
+    if (!w.completed) return;
+    const dateStr = w.date || w.completedAt;
+    const date = new Date(dateStr).toLocaleDateString('es-ES', { month: 'short', day: 'numeric' });
+    
+    if (w.actualData && w.exercises) {
+      Object.entries(w.actualData).forEach(([idx, actualEx]) => {
+        if (actualEx.done) {
+          const expectedEx = w.exercises[idx];
+          const muscle = expectedEx ? (exercisesLib[expectedEx.exerciseId] || 'Otros') : 'Otros';
+          
+          if (selectedVolumeMuscle === 'Todos' || muscle === selectedVolumeMuscle) {
+            const s = parseInt(actualEx.reps?.split('x')[0]) || 0;
+            const r = parseInt(actualEx.reps?.split('x')[1]) || 0;
+            const wt = parseFloat(actualEx.weight) || 0;
+            const vol = s * r * wt;
+            
+            if (vol > 0) {
+              if (!rawVolumeData[dateStr]) rawVolumeData[dateStr] = { date, value: 0, createdAt: dateStr };
+              rawVolumeData[dateStr].value += vol;
+            }
+          }
         }
       });
     }
-    if (vol > 0) acc.push({ date, value: vol, createdAt: w.date });
-    return acc;
-  }, []).sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
+  });
+  const volumeData = Object.values(rawVolumeData).sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+  const uniqueMusclesLogged = [...new Set(Object.values(exercisesLib))].filter(Boolean);
 
   const renderRecoveryMap = () => {
     const now = new Date();
@@ -695,9 +764,48 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
             </select>
             
             {chartMode === 'rm' && uniqueExercises.length > 0 && (
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <select 
+                  value={selectedExercise} 
+                  onChange={(e) => setSelectedExercise(e.target.value)}
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    color: 'var(--foreground)',
+                    border: '1px solid var(--border)',
+                    padding: '0.25rem 0.5rem',
+                    borderRadius: 'var(--radius)',
+                    outline: 'none',
+                    fontSize: '0.9rem'
+                  }}
+                >
+                  {uniqueExercises.map(ex => (
+                    <option key={ex} value={ex} style={{ background: 'var(--background)' }}>{ex}</option>
+                  ))}
+                </select>
+                <button 
+                  className="btn-primary" 
+                  style={{ padding: '0.25rem 0.75rem', fontSize: '0.85rem' }}
+                  onClick={() => setShowQuickRmModal(true)}
+                >
+                  <Plus size={14} style={{ marginRight: '4px' }} /> RM
+                </button>
+              </div>
+            )}
+
+            {chartMode === 'weight' && (
+              <button 
+                className="btn-primary" 
+                style={{ padding: '0.25rem 0.75rem', fontSize: '0.85rem' }}
+                onClick={() => setShowQuickWeightModal(true)}
+              >
+                <Plus size={14} style={{ marginRight: '4px' }} /> Peso
+              </button>
+            )}
+
+            {chartMode === 'volume' && (
               <select 
-                value={selectedExercise} 
-                onChange={(e) => setSelectedExercise(e.target.value)}
+                value={selectedVolumeMuscle} 
+                onChange={(e) => setSelectedVolumeMuscle(e.target.value)}
                 style={{
                   background: 'rgba(255, 255, 255, 0.05)',
                   color: 'var(--foreground)',
@@ -708,8 +816,9 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
                   fontSize: '0.9rem'
                 }}
               >
-                {uniqueExercises.map(ex => (
-                  <option key={ex} value={ex} style={{ background: 'var(--background)' }}>{ex}</option>
+                <option value="Todos" style={{ background: 'var(--background)' }}>Todos los Músculos</option>
+                {uniqueMusclesLogged.map(m => (
+                  <option key={m} value={m} style={{ background: 'var(--background)' }}>{m}</option>
                 ))}
               </select>
             )}
@@ -901,6 +1010,62 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
           font-weight: 600;
         }
       `}</style>
+
+      {/* Quick RM Modal */}
+      {showQuickRmModal && (
+        <div className="modal-overlay">
+          <div className="modal glass">
+            <h2>Registrar RM Rápido</h2>
+            <p className="modal-subtitle">Guarda tu RM para <strong>{selectedExercise}</strong></p>
+            <form onSubmit={handleQuickLogRm} className="modal-form">
+              <div className="input-group">
+                <label>Peso Máximo (kg)</label>
+                <input 
+                  type="number" step="0.5" required
+                  placeholder="Ej. 100" 
+                  value={quickRmValue} onChange={e => setQuickRmValue(e.target.value)}
+                />
+              </div>
+              <div className="input-group">
+                <label>Repeticiones</label>
+                <input 
+                  type="number" required
+                  placeholder="Ej. 1" 
+                  value={quickRmReps} onChange={e => setQuickRmReps(e.target.value)}
+                />
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn-secondary" onClick={() => setShowQuickRmModal(false)}>Cancelar</button>
+                <button type="submit" className="btn-primary">Guardar RM</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Weight Modal */}
+      {showQuickWeightModal && (
+        <div className="modal-overlay">
+          <div className="modal glass">
+            <h2>Registrar Peso Corporal</h2>
+            <form onSubmit={handleQuickLogWeight} className="modal-form">
+              <div className="input-group">
+                <label>Peso Actual (kg)</label>
+                <input 
+                  type="number" step="0.1" required
+                  placeholder="Ej. 75.5" 
+                  value={quickWeightValue} onChange={e => setQuickWeightValue(e.target.value)}
+                />
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn-secondary" onClick={() => setShowQuickWeightModal(false)}>Cancelar</button>
+                <button type="submit" className="btn-primary">Guardar Peso</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

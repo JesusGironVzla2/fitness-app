@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, getDocs, addDoc } from 'firebase/firestore';
+import { collection, query, getDocs, addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
-import { Dumbbell, Plus, TrendingUp, Sparkles } from 'lucide-react';
+import { Dumbbell, Plus, TrendingUp, Sparkles, Pencil, Trash2, Settings } from 'lucide-react';
 import '../styles/global.css';
 
 export default function Exercises() {
@@ -10,6 +10,7 @@ export default function Exercises() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [newExercise, setNewExercise] = useState({ name: '', targetMuscle: '', description: '', imageUrl: '' });
+  const [editExerciseId, setEditExerciseId] = useState(null);
   
   // States para filtros y RM
   const [filterMuscle, setFilterMuscle] = useState('Todos');
@@ -18,37 +19,87 @@ export default function Exercises() {
   const [rmValue, setRmValue] = useState('');
   const [repsValue, setRepsValue] = useState('');
   
+  // Muscle Manager State
+  const [savedMuscles, setSavedMuscles] = useState(['Pecho', 'Espalda', 'Piernas', 'Hombro', 'Bíceps', 'Tríceps', 'Abdomen']);
+  const [showMuscleManager, setShowMuscleManager] = useState(false);
+  const [newMuscleName, setNewMuscleName] = useState('');
+  
   const { currentUser } = useAuth();
-
-  useEffect(() => {
-    fetchExercises();
-  }, []);
 
   const fetchExercises = async () => {
     try {
       const q = query(collection(db, "exercises"));
-      const querySnapshot = await getDocs(q);
-      const exercisesData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setExercises(exercisesData);
+      const snap = await getDocs(q);
+      setExercises(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     } catch (err) {
-      console.error("Error fetching exercises:", err);
+      console.error(err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCreateExercise = async (e) => {
+  const fetchMuscles = async () => {
+    try {
+      const docRef = doc(db, "settings", "muscles");
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists() && docSnap.data().list) {
+        setSavedMuscles(docSnap.data().list);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    fetchExercises();
+    fetchMuscles();
+  }, []);
+
+
+
+  const handleSaveExercise = async (e) => {
     e.preventDefault();
     try {
-      await addDoc(collection(db, "exercises"), {
-        ...newExercise,
-        createdAt: new Date().toISOString()
-      });
+      if (editExerciseId) {
+        await updateDoc(doc(db, "exercises", editExerciseId), {
+          ...newExercise,
+        });
+      } else {
+        await addDoc(collection(db, "exercises"), {
+          ...newExercise,
+          createdAt: new Date().toISOString()
+        });
+      }
       setShowModal(false);
       setNewExercise({ name: '', targetMuscle: '', description: '', imageUrl: '' });
+      setEditExerciseId(null);
       fetchExercises();
     } catch (err) {
-      console.error("Error creating exercise:", err);
+      console.error("Error saving exercise:", err);
+    }
+  };
+
+  const handleEditExercise = (e, exercise) => {
+    e.stopPropagation();
+    setNewExercise({
+      name: exercise.name || '',
+      targetMuscle: exercise.targetMuscle || '',
+      description: exercise.description || '',
+      imageUrl: exercise.imageUrl || ''
+    });
+    setEditExerciseId(exercise.id);
+    setShowModal(true);
+  };
+
+  const handleDeleteExercise = async (e, id) => {
+    e.stopPropagation();
+    if (window.confirm('¿Estás seguro de que deseas eliminar este ejercicio?')) {
+      try {
+        await deleteDoc(doc(db, "exercises", id));
+        fetchExercises();
+      } catch (err) {
+        console.error("Error deleting exercise:", err);
+      }
     }
   };
 
@@ -83,7 +134,6 @@ export default function Exercises() {
 
     setLoading(true);
     for (const ex of defaultExercises) {
-      // Check if it exists to avoid duplicates
       const exists = exercises.some(e => e.name.toLowerCase() === ex.name.toLowerCase());
       if (!exists) {
         await addDoc(collection(db, "exercises"), { ...ex, createdAt: new Date().toISOString() });
@@ -93,7 +143,33 @@ export default function Exercises() {
     alert("¡Ejercicios de prueba cargados con éxito!");
   };
 
-  const muscleGroups = ['Todos', 'Pecho', 'Espalda', 'Piernas', 'Hombro', 'Bíceps', 'Tríceps', 'Abdomen'];
+  const dynamicMuscles = Array.from(new Set(exercises.map(ex => ex.targetMuscle)))
+    .filter(m => m && !savedMuscles.includes(m));
+  const muscleGroups = ['Todos', ...savedMuscles, ...dynamicMuscles];
+  
+  const handleSaveMuscle = async (e) => {
+    e.preventDefault();
+    if (!newMuscleName.trim()) return;
+    const updatedList = [...savedMuscles, newMuscleName.trim()];
+    try {
+      await setDoc(doc(db, "settings", "muscles"), { list: updatedList });
+      setSavedMuscles(updatedList);
+      setNewMuscleName('');
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteMuscle = async (m) => {
+    const updatedList = savedMuscles.filter(x => x !== m);
+    try {
+      await setDoc(doc(db, "settings", "muscles"), { list: updatedList });
+      setSavedMuscles(updatedList);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const filteredExercises = filterMuscle === 'Todos' 
     ? exercises 
     : exercises.filter(ex => ex.targetMuscle.toLowerCase().includes(filterMuscle.toLowerCase()));
@@ -114,31 +190,43 @@ export default function Exercises() {
             <Sparkles size={20} />
             <span>Cargar GIFs de Prueba</span>
           </button>
-          <button className="btn-primary" onClick={() => setShowModal(true)}>
+          <button className="btn-primary" onClick={() => {
+            setEditExerciseId(null);
+            setNewExercise({ name: '', targetMuscle: '', description: '', imageUrl: '' });
+            setShowModal(true);
+          }}>
             <Plus size={20} />
             <span>Nuevo Ejercicio</span>
           </button>
         </div>
       </div>
 
-      <div className="filters-container" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', overflowX: 'auto', paddingBottom: '0.5rem' }}>
-        {muscleGroups.map(muscle => (
-          <button 
-            key={muscle}
-            onClick={() => setFilterMuscle(muscle)}
-            className={`badge ${filterMuscle === muscle ? 'active' : ''}`}
-            style={{ 
-              cursor: 'pointer', 
-              border: 'none', 
-              fontSize: '0.9rem', 
-              padding: '0.5rem 1rem',
-              background: filterMuscle === muscle ? 'var(--primary)' : 'rgba(255,255,255,0.05)',
-              color: filterMuscle === muscle ? 'var(--primary-foreground)' : 'var(--muted-foreground)'
+      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '1.5rem' }}>
+          <select 
+            value={filterMuscle} 
+            onChange={(e) => setFilterMuscle(e.target.value)}
+            style={{
+              background: 'rgba(255, 255, 255, 0.05)',
+              color: 'var(--foreground)',
+              border: '1px solid var(--border)',
+              padding: '0.5rem',
+              borderRadius: 'var(--radius)',
+              outline: 'none',
+              minWidth: '150px'
             }}
           >
-            {muscle}
+            {muscleGroups.map(m => (
+              <option key={m} value={m} style={{ background: 'var(--background)' }}>{m}</option>
+            ))}
+          </select>
+          <button 
+            className="icon-btn" 
+            onClick={() => setShowMuscleManager(true)}
+            style={{ padding: '0.5rem', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'rgba(255, 255, 255, 0.05)', cursor: 'pointer', color: 'var(--foreground)' }}
+            title="Gestionar Músculos"
+          >
+            <Settings size={20} />
           </button>
-        ))}
       </div>
 
       <div className="exercises-grid">
@@ -166,7 +254,27 @@ export default function Exercises() {
                 )}
               </div>
               <div className="exercise-info">
-                <h3>{exercise.name}</h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <h3>{exercise.name}</h3>
+                  <div className="exercise-actions" style={{ display: 'flex', gap: '0.5rem' }}>
+                    <button 
+                      className="icon-btn" 
+                      onClick={(e) => handleEditExercise(e, exercise)}
+                      style={{ background: 'none', border: 'none', color: 'var(--muted-foreground)', cursor: 'pointer', padding: '0.25rem' }}
+                      title="Editar"
+                    >
+                      <Pencil size={16} />
+                    </button>
+                    <button 
+                      className="icon-btn" 
+                      onClick={(e) => handleDeleteExercise(e, exercise.id)}
+                      style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '0.25rem' }}
+                      title="Eliminar"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </div>
                 <span className="badge">{exercise.targetMuscle}</span>
                 <p>{exercise.description}</p>
               </div>
@@ -178,8 +286,8 @@ export default function Exercises() {
       {showModal && (
         <div className="modal-overlay">
           <div className="modal glass">
-            <h2>Nuevo Ejercicio</h2>
-            <form onSubmit={handleCreateExercise} className="modal-form">
+            <h2>{editExerciseId ? 'Editar Ejercicio' : 'Nuevo Ejercicio'}</h2>
+            <form onSubmit={handleSaveExercise} className="modal-form">
               <div className="input-group">
                 <label>Nombre del Ejercicio</label>
                 <input 
@@ -194,12 +302,18 @@ export default function Exercises() {
               <div className="input-group">
                 <label>Músculo Principal</label>
                 <input 
+                  list="muscles-list"
                   type="text" 
                   placeholder="Ej. Pecho" 
                   value={newExercise.targetMuscle}
                   onChange={(e) => setNewExercise({...newExercise, targetMuscle: e.target.value})}
                   required
                 />
+                <datalist id="muscles-list">
+                  {savedMuscles.map(m => (
+                    <option key={m} value={m} />
+                  ))}
+                </datalist>
               </div>
 
               <div className="input-group">
@@ -213,7 +327,7 @@ export default function Exercises() {
               </div>
 
               <div className="input-group">
-                <label>URL de la Imagen/GIF (Opcional por ahora)</label>
+                <label>URL de la Imagen/GIF</label>
                 <input 
                   type="url" 
                   placeholder="https://..." 
@@ -227,6 +341,36 @@ export default function Exercises() {
                 <button type="submit" className="btn-primary">Guardar Ejercicio</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showMuscleManager && (
+        <div className="modal-overlay">
+          <div className="modal glass">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2>Gestionar Músculos</h2>
+              <button className="icon-btn" onClick={() => setShowMuscleManager(false)}><X size={20} /></button>
+            </div>
+            <form onSubmit={handleSaveMuscle} className="modal-form" style={{ marginBottom: '1rem' }}>
+              <div className="input-group">
+                <input 
+                  type="text" 
+                  placeholder="Nuevo grupo muscular..." 
+                  value={newMuscleName}
+                  onChange={(e) => setNewMuscleName(e.target.value)}
+                />
+                <button type="submit" className="btn-primary" style={{ marginTop: '0.5rem' }}>Agregar</button>
+              </div>
+            </form>
+            <div className="muscle-list" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+              {savedMuscles.map(m => (
+                <div key={m} className="badge" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  {m}
+                  <button onClick={() => handleDeleteMuscle(m)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'red' }}><X size={14}/></button>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

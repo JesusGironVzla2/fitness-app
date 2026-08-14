@@ -404,6 +404,32 @@ Formato requerido:
         duration: finalDuration,
         completedAt: new Date().toISOString()
       });
+
+      // Calculate and save 1RM for each done exercise
+      if (routine.exercises && Array.isArray(routine.exercises)) {
+        for (let i = 0; i < routine.exercises.length; i++) {
+          const ex = routine.exercises[i];
+          const data = exData[i];
+          if (data && data.done && data.weight && data.reps) {
+            const w = parseFloat(data.weight);
+            const r = parseInt(data.reps, 10);
+            if (!isNaN(w) && !isNaN(r) && w > 0 && r > 0) {
+              // Epley Formula: 1RM = Weight * (1 + Reps/30)
+              const rm = w * (1 + r / 30);
+              
+              await addDoc(collection(db, "progress_logs"), {
+                studentId: currentUser.uid,
+                type: "RM",
+                exerciseOrBodyPart: ex.name || "Ejercicio Desconocido",
+                value: rm.toFixed(1),
+                unit: "kg",
+                notes: `Auto (Epley): ${w}kg x ${r} reps en rutina`,
+                createdAt: new Date().toISOString()
+              });
+            }
+          }
+        }
+      }
       
       // Refresh routines
       fetchWorkouts();
