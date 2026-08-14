@@ -14,6 +14,7 @@ import Settings from './pages/Settings';
 import Support from './pages/Support';
 import Tips from './pages/Tips';
 import Wellness from './pages/Wellness';
+import BodyMetrics from './pages/BodyMetrics';
 import ProtectedRoute from './components/ProtectedRoute';
 import { useAuth } from './context/AuthContext';
 
@@ -44,6 +45,7 @@ function App() {
           <Route path="/rutinas" element={<Workouts />} />
           <Route path="/mis-rutinas" element={<StudentWorkouts />} />
           <Route path="/progreso" element={<StudentProgress />} />
+          <Route path="/control-corporal" element={<BodyMetrics />} />
           <Route path="/suplementacion" element={<Supplements />} />
           <Route path="/mensajes" element={<Chat />} />
           <Route path="/soporte" element={<Support />} />

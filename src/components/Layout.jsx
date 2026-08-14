@@ -19,7 +19,8 @@ import {
   LifeBuoy,
   Sparkles,
   Flame,
-  Heart
+  Heart,
+  Scale
 } from 'lucide-react';
 import '../styles/global.css';
 import NotificationPanel from './NotificationPanel';
@@ -105,6 +106,7 @@ export default function Layout() {
       { name: 'Rutinas', path: '/rutinas', icon: ListTodo },
       { name: 'Mis Rutinas', path: '/mis-rutinas', icon: ClipboardList },
       { name: 'Mi Progreso', path: '/progreso', icon: Activity },
+      { name: 'Control Corporal', path: '/control-corporal', icon: Scale },
       { name: 'Suplementación', path: '/suplementacion', icon: Pill },
       { name: 'Mensajes', path: '/mensajes', icon: MessageSquare },
       { name: 'Consejos', path: '/consejos', icon: Sparkles },
@@ -118,6 +120,7 @@ export default function Layout() {
       { name: 'Rutinas', path: '/rutinas', icon: ListTodo },
       { name: 'Mis Rutinas', path: '/mis-rutinas', icon: ClipboardList },
       { name: 'Mi Progreso', path: '/progreso', icon: Activity },
+      { name: 'Control Corporal', path: '/control-corporal', icon: Scale },
       { name: 'Suplementación', path: '/suplementacion', icon: Pill },
       { name: 'Mensajes', path: '/mensajes', icon: MessageSquare },
       { name: 'Consejos', path: '/consejos', icon: Sparkles },
@@ -128,6 +131,7 @@ export default function Layout() {
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Mis Rutinas', path: '/mis-rutinas', icon: ClipboardList },
       { name: 'Mi Progreso', path: '/progreso', icon: Activity },
+      { name: 'Control Corporal', path: '/control-corporal', icon: Scale },
       { name: 'Mensajes', path: '/mensajes', icon: MessageSquare },
       { name: 'Consejos', path: '/consejos', icon: Sparkles },
       { name: 'Wellness', path: '/wellness', icon: Heart },
