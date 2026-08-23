@@ -4,6 +4,13 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
+  server: {
+    // Por defecto Vite escucha en `localhost`, que en este equipo resuelve sólo
+    // a IPv6 ([::1]). Chrome resuelve `localhost` a la IPv4 127.0.0.1 y recibe
+    // ERR_CONNECTION_REFUSED. Fijarlo a 127.0.0.1 evita ese desajuste.
+    host: '127.0.0.1',
+    port: 5173,
+  },
   plugins: [
     react(),
     VitePWA({

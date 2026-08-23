@@ -5,6 +5,9 @@ import { useAuth } from '../context/AuthContext';
 import { collection, query, where, getDocs, addDoc, getDoc, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { ResponsiveContainer, AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, Legend } from 'recharts';
+import { fetchProgressLogs, buildMeasureLog } from '../lib/progress';
+import { toTime, todayKey, dayKey, formatShort, toNumber, workoutDate } from '../lib/dates';
+import { ROLES } from '../lib/roles';
 import ProgressRings from '../components/ProgressRings';
 import ActivityCalendar from '../components/ActivityCalendar';
 import Trophies from '../components/Trophies';
@@ -38,7 +41,7 @@ export default function Dashboard() {
   const [chartMode, setChartMode] = useState('rm'); // 'rm', 'weight', 'fat', 'volume'
 
   useEffect(() => {
-    if (userRole === 'trainer' && currentUser) {
+    if (userRole === ROLES.TRAINER && currentUser) {
       const fetchStats = async () => {
         try {
           const q = query(collection(db, "users"), where("role", "==", "student"), where("trainerId", "==", currentUser.uid));
@@ -54,9 +57,9 @@ export default function Dashboard() {
     if (currentUser) {
       const fetchLogs = async () => {
         try {
-          const q = query(collection(db, "progress_logs"), where("studentId", "==", currentUser.uid));
-          const snap = await getDocs(q);
-          const logs = snap.docs.map(doc => doc.data()).sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
+          // Lectura unificada: incluye también las medidas guardadas por
+          // Control Corporal, que antes eran invisibles desde aquí.
+          const logs = await fetchProgressLogs(currentUser.uid);
           
           const rms = logs.filter(l => l.type === 'RM');
           setRmLogs(rms);
@@ -64,9 +67,12 @@ export default function Dashboard() {
           const metrics = logs.filter(l => l.type === 'Medida');
           setMetricLogs(metrics);
 
-          const todayStr = new Date().toISOString().split('T')[0];
-          const waterLogsToday = logs.filter(l => l.type === 'Water' && l.createdAt.startsWith(todayStr));
-          setWaterGlasses(waterLogsToday.reduce((sum, l) => sum + parseInt(l.value), 0));
+          // `l.createdAt.startsWith(...)` rompe si el log no tiene fecha, y
+          // comparar contra el día UTC hacía que el contador se reiniciase a
+          // una hora equivocada. `parseInt(undefined)` daba NaN y borraba el total.
+          const todayStr = todayKey();
+          const waterLogsToday = logs.filter(l => l.type === 'Water' && dayKey(l.createdAt) === todayStr);
+          setWaterGlasses(waterLogsToday.reduce((sum, l) => sum + toNumber(l.value, 0), 0));
 
           // We want to fetch personal workout data for everyone, not just students.
           const qW = query(collection(db, "workouts"), where("studentId", "==", currentUser.uid));
@@ -75,7 +81,10 @@ export default function Dashboard() {
           setWorkouts(allWorkouts);
 
           // Calculate Streak (Consecutive Weeks)
-          const completedDates = allWorkouts.filter(w => w.completed).map(w => new Date(w.date || w.completedAt));
+          const completedDates = allWorkouts
+            .filter(w => w.completed)
+            .map(workoutDate)
+            .filter(Boolean);
           completedDates.sort((a,b) => b - a);
           
           let streakCount = 0;
@@ -116,8 +125,11 @@ export default function Dashboard() {
               const snapStudents = await getDocs(qStudents);
               const studentMap = {};
               snapStudents.docs.forEach(d => { 
-                const name = d.data().name || d.data().email.split('@')[0];
-                studentMap[d.id] = { name, initial: name[0].toUpperCase(), uid: d.id };
+                // Un alumno sin `name` NI `email` hacía `undefined.split()` y
+                // tumbaba toda la carga del Dashboard (el catch exterior estaba vacío).
+                const data = d.data();
+                const name = data.name || (data.email ? data.email.split('@')[0] : 'Alumno');
+                studentMap[d.id] = { name, initial: (name[0] || 'A').toUpperCase(), uid: d.id };
               });
               
               const sevenDaysAgo = new Date();
@@ -129,7 +141,8 @@ export default function Dashboard() {
               const studentVolumes = {};
               snapAllW.docs.forEach(d => {
                 const w = d.data();
-                if (w.completed && new Date(w.date || w.completedAt) >= sevenDaysAgo && studentMap[w.studentId]) {
+                const wDate = workoutDate(w);
+                if (w.completed && wDate && wDate >= sevenDaysAgo && studentMap[w.studentId]) {
                   let vol = 0;
                   if (w.actualData) {
                     Object.values(w.actualData).forEach(ex => {
@@ -198,7 +211,13 @@ export default function Dashboard() {
           } else if (rms.length > 0 && !selectedExercise) {
             setSelectedExercise(rms[0].exerciseOrBodyPart);
           }
-        } catch(e) {}
+        } catch(e) {
+          // Antes este catch estaba vacío: cualquier fallo de carga dejaba el
+          // Dashboard en blanco sin ninguna pista en consola.
+          console.error("Error cargando el Dashboard:", e);
+        } finally {
+          setLoadingAI(false);
+        }
       };
       fetchLogs();
     }
@@ -251,9 +270,12 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
     // Fallback: Heurística manual (IA Simulada)
     const newInsights = [];
     if (weights.length >= 2) {
-      const diff = (parseFloat(weights[weights.length - 1].value) - parseFloat(weights[weights.length - 2].value)).toFixed(1);
-      if (diff < 0) newInsights.push({ type: 'positive', text: `Has bajado ${Math.abs(diff)}kg de peso corporal. ¡Excelente trabajo!` });
-      else if (diff > 0) newInsights.push({ type: 'neutral', text: `Tu peso aumentó ${diff}kg desde la última vez.` });
+      // `.toFixed()` devuelve un string: comparar ese string con 0 funcionaba
+      // por coerción, pero "-0.0" se evaluaba como 0 y no se mostraba nada.
+      const diff = toNumber(weights[weights.length - 1].value) - toNumber(weights[weights.length - 2].value);
+      const shown = Math.abs(diff).toFixed(1);
+      if (diff < -0.05) newInsights.push({ type: 'positive', text: `Has bajado ${shown}kg de peso corporal. ¡Excelente trabajo!` });
+      else if (diff > 0.05) newInsights.push({ type: 'neutral', text: `Tu peso aumentó ${shown}kg desde la última vez.` });
     }
     if (rms.length >= 2) {
       newInsights.push({ type: 'positive', text: `Continúas registrando tu fuerza. Tienes un total de ${rms.length} mediciones históricas.` });
@@ -266,60 +288,103 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
 
   const uniqueExercises = allExerciseNames.length > 0 ? allExerciseNames : [...new Set(rmLogs.map(l => l.exerciseOrBodyPart))];
 
+  // Recarga sólo los logs de progreso, sin tirar abajo toda la página.
+  const refreshProgressLogs = async () => {
+    try {
+      const logs = await fetchProgressLogs(currentUser.uid);
+      setRmLogs(logs.filter(l => l.type === 'RM'));
+      setMetricLogs(logs.filter(l => l.type === 'Medida'));
+      const today = todayKey();
+      setWaterGlasses(
+        logs
+          .filter(l => l.type === 'Water' && dayKey(l.createdAt) === today)
+          .reduce((sum, l) => sum + toNumber(l.value, 0), 0)
+      );
+    } catch (err) {
+      console.error("Error refrescando el progreso:", err);
+    }
+  };
+
   const handleQuickLogRm = async (e) => {
     e.preventDefault();
+    const value = toNumber(quickRmValue, null);
+    if (value === null || value <= 0) {
+      alert('Introduce un peso válido.');
+      return;
+    }
+    if (!selectedExercise) {
+      alert('Selecciona un ejercicio antes de guardar el RM.');
+      return;
+    }
     try {
       await addDoc(collection(db, "progress_logs"), {
         studentId: currentUser.uid,
         type: "RM",
         exerciseOrBodyPart: selectedExercise,
-        value: quickRmValue,
+        value: String(value),
         unit: "kg",
-        notes: `Añadido rápido desde Dashboard (${quickRmValue}kg x ${quickRmReps} reps)`,
+        notes: `Añadido rápido desde Dashboard (${value}kg x ${quickRmReps || '?'} reps)`,
         createdAt: new Date().toISOString()
       });
       setShowQuickRmModal(false);
       setQuickRmValue('');
       setQuickRmReps('');
-      // Force reload by fetching logs again (or user can just refresh, but ideally we refresh state)
-      window.location.reload(); 
+      // Antes se hacía window.location.reload(), que recargaba la app entera.
+      await refreshProgressLogs();
     } catch(err) {
       console.error(err);
+      alert('No se pudo guardar el RM: ' + err.message);
     }
   };
 
   const handleQuickLogWeight = async (e) => {
     e.preventDefault();
+    const value = toNumber(quickWeightValue, null);
+    if (value === null || value <= 0) {
+      alert('Introduce un peso válido.');
+      return;
+    }
     try {
       await addDoc(collection(db, "progress_logs"), {
-        studentId: currentUser.uid,
-        type: "Medida",
-        metric: "Peso Corporal",
-        value: quickWeightValue,
-        unit: "kg",
-        notes: "Añadido rápido desde Dashboard",
-        createdAt: new Date().toISOString()
+        ...buildMeasureLog({
+          studentId: currentUser.uid,
+          metric: "Peso Corporal",
+          value,
+          unit: "kg"
+        }),
+        notes: "Añadido rápido desde Dashboard"
       });
       setShowQuickWeightModal(false);
       setQuickWeightValue('');
-      window.location.reload();
+      await refreshProgressLogs();
     } catch(err) {
       console.error(err);
+      alert('No se pudo guardar el peso: ' + err.message);
     }
   };
 
   const handleAddWater = async () => {
+    // Incremento optimista: si la escritura falla hay que revertirlo, antes el
+    // contador se quedaba subido mintiendo sobre lo que había guardado.
     setWaterGlasses(prev => prev + 1);
-    await addDoc(collection(db, "progress_logs"), {
-      studentId: currentUser.uid, type: 'Water', value: '1', unit: 'vasos', createdAt: new Date().toISOString()
-    });
+    try {
+      await addDoc(collection(db, "progress_logs"), {
+        studentId: currentUser.uid, type: 'Water', value: '1', unit: 'vasos', createdAt: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error("Error registrando el vaso de agua:", err);
+      setWaterGlasses(prev => Math.max(0, prev - 1));
+      alert('No se pudo registrar el vaso de agua.');
+    }
   };
 
   const rawVolumeData = {};
   workouts.forEach(w => {
     if (!w.completed) return;
+    const wDate = workoutDate(w);
+    if (!wDate) return;
     const dateStr = w.date || w.completedAt;
-    const date = new Date(dateStr).toLocaleDateString('es-ES', { month: 'short', day: 'numeric' });
+    const date = formatShort(wDate);
     
     if (w.actualData && w.exercises) {
       Object.entries(w.actualData).forEach(([idx, actualEx]) => {
@@ -342,53 +407,9 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
       });
     }
   });
-  const volumeData = Object.values(rawVolumeData).sort((a,b) => new Date(a.createdAt) - new Date(b.createdAt));
+  const volumeData = Object.values(rawVolumeData).sort((a,b) => toTime(a.createdAt) - toTime(b.createdAt));
 
   const uniqueMusclesLogged = [...new Set(Object.values(exercisesLib))].filter(Boolean);
-
-  const renderRecoveryMap = () => {
-    const now = new Date();
-    const fatigueMap = {}; 
-    workouts.forEach(w => {
-      if (w.completed) {
-        const wDate = new Date(w.completedAt || w.date);
-        const hoursDiff = (now - wDate) / (1000 * 60 * 60);
-        if (hoursDiff <= 72 && w.exercises) {
-          w.exercises.forEach(ex => {
-            const muscle = exercisesLib[ex.exerciseId] || 'Otros';
-            if (!fatigueMap[muscle] || hoursDiff < fatigueMap[muscle]) {
-              fatigueMap[muscle] = hoursDiff;
-            }
-          });
-        }
-      }
-    });
-
-    const muscles = Object.keys(fatigueMap);
-    if (muscles.length === 0) return null;
-
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '1rem', padding: '1rem', background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius)' }}>
-        <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.9rem', color: 'var(--muted-foreground)' }}>Estado Muscular (72h)</h4>
-        {muscles.map(m => {
-          const h = fatigueMap[m];
-          let color = '#10b981';
-          let label = 'Recuperado';
-          if (h <= 24) { color = '#ef4444'; label = 'Fatigado'; }
-          else if (h <= 48) { color = '#eab308'; label = 'Recuperándose'; }
-          return (
-            <div key={m} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.85rem' }}>{m}</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span style={{ fontSize: '0.75rem', color: 'var(--muted-foreground)' }}>{label}</span>
-                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: color }} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
 
   const renderChart = (dataset, labelSuffix, isArea = false) => {
     if (!dataset || dataset.length === 0) {
@@ -396,10 +417,18 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
     }
     
     // Prepare data for recharts
-    const formattedData = dataset.map(log => ({
-      date: new Date(log.createdAt).toLocaleDateString('es-ES', { month: 'short', day: 'numeric' }),
-      value: parseFloat(log.value)
-    }));
+    // Un registro con valor vacío metía un NaN en la serie y recharts dibujaba
+    // la línea cortada sin ningún aviso.
+    const formattedData = dataset
+      .map(log => ({
+        date: formatShort(log.createdAt),
+        value: toNumber(log.value, null)
+      }))
+      .filter(point => point.value !== null);
+
+    if (formattedData.length === 0) {
+      return <div style={{display:'flex', height:'100%', alignItems:'center', justifyContent:'center', color:'var(--muted-foreground)'}}>No hay datos numéricos válidos para mostrar.</div>;
+    }
 
     const ChartComponent = isArea ? AreaChart : LineChart;
     const DataComponent = isArea ? Area : Line;
@@ -456,8 +485,8 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
 
     const recentWorkouts = workouts.filter(w => {
       if (!w.completed) return false;
-      const wDate = new Date(w.date || w.completedAt);
-      return wDate >= oneWeekAgo;
+      const wDate = workoutDate(w);
+      return wDate ? wDate >= oneWeekAgo : false;
     });
 
     const muscleCounts = {};
@@ -547,9 +576,15 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
     { title: 'RMs Registrados', value: studentStats.rms.toString(), icon: Dumbbell, color: '#a855f7' },
   ];
 
-  const displayStats = userRole === 'student' ? studentStatsArray : (userRole === 'trainer' ? trainerStats : adminStats);
+  const isStudent = userRole === ROLES.STUDENT;
+  const displayStats = isStudent ? studentStatsArray : (userRole === ROLES.TRAINER ? trainerStats : adminStats);
 
-  const thisWeekWorkouts = workouts.filter(w => w.completed && new Date(w.date || w.completedAt) >= new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).length;
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const thisWeekWorkouts = workouts.filter(w => {
+    if (!w.completed) return false;
+    const d = workoutDate(w);
+    return d ? d >= weekAgo : false;
+  }).length;
   const ringData = [
     { color: '#eab308', percentage: Math.min(100, (currentStreak / 12) * 100) }, // Racha
     { color: '#3b82f6', percentage: Math.min(100, (waterGlasses / 8) * 100) },  // Agua
@@ -560,11 +595,11 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
     <div className="dashboard-container">
       <div className="dashboard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
-          <h1>{userRole === 'trainer' ? 'Resumen de Entrenamientos' : userRole === 'student' ? 'Mi Progreso Físico' : 'Resumen General'}</h1>
-          <p>{userRole === 'trainer' ? 'Métricas de tus alumnos y rendimiento.' : userRole === 'student' ? 'Revisa tu evolución de fuerza y medidas corporales.' : 'Estadísticas y actividad reciente de la plataforma.'}</p>
+          <h1>{userRole === ROLES.TRAINER ? 'Resumen de Entrenamientos' : isStudent ? 'Mi Progreso Físico' : 'Resumen General'}</h1>
+          <p>{userRole === ROLES.TRAINER ? 'Métricas de tus alumnos y rendimiento.' : isStudent ? 'Revisa tu evolución de fuerza y medidas corporales.' : 'Estadísticas y actividad reciente de la plataforma.'}</p>
         </div>
         
-        {userRole === 'student' && currentStreak > 0 && (
+        {isStudent && currentStreak > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '0.5rem 1rem', borderRadius: '50px', animation: 'fade-up 0.5s ease-out' }}>
             <span style={{ fontSize: '1.75rem', filter: 'drop-shadow(0 0 8px rgba(239,68,68,0.6))' }}>🔥</span>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -575,7 +610,7 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
         )}
       </div>
 
-      {userRole !== 'student' && (
+      {!isStudent && (
         <>
           <h2 style={{ marginTop: '1rem', fontSize: '1.25rem' }}>Estadísticas de la Plataforma</h2>
           <div className="stats-grid">
@@ -605,7 +640,7 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
         </button>
       </div>
 
-      {userRole === 'admin' && (
+      {userRole === ROLES.ADMIN && (
         <button 
           className="btn-secondary"
           style={{ width: 'fit-content', margin: '0 auto' }}
@@ -679,7 +714,7 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
       )}
 
       {/* Premium Visuals Section for Students */}
-      {userRole === 'student' && (
+      {isStudent && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem', marginBottom: '1.5rem' }}>
           
           {/* Rings & Water */}
@@ -710,7 +745,7 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
       )}
 
       {/* Activity Heatmap */}
-      {userRole === 'student' && (
+      {isStudent && (
         <div className="panel glass" style={{ marginBottom: '1.5rem' }}>
           <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem' }}>Consistencia de Entrenamiento</h3>
           <ActivityCalendar workouts={workouts} />

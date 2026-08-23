@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
+import { collection, addDoc, doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
+import AnthropometryPanel from '../components/AnthropometryPanel';
+import { fetchProgressLogs, buildMeasureLog, MEASURE_TYPE } from '../lib/progress';
+import { formatDate } from '../lib/dates';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { Scale, Plus, TrendingUp, Activity } from 'lucide-react';
 import '../styles/global.css';
@@ -9,6 +12,9 @@ import '../styles/global.css';
 const METRICS_LIST = [
   { name: 'Peso Corporal', unit: 'kg' },
   { name: '% Grasa', unit: '%' },
+  // Resultados de la evaluación antropométrica (ver AnthropometryPanel)
+  { name: 'IMC', unit: '' },
+  { name: 'Masa Magra', unit: 'kg' },
   { name: 'Cuello', unit: 'cm' },
   { name: 'Hombros', unit: 'cm' },
   { name: 'Pecho', unit: 'cm' },
@@ -30,26 +36,33 @@ export default function BodyMetrics() {
   const [newMetricType, setNewMetricType] = useState('Peso Corporal');
   const [newMetricValue, setNewMetricValue] = useState('');
 
+  // Perfil del usuario: sirve para prellenar la evaluación antropométrica con
+  // los datos que ya se pidieron al darle de alta.
+  const [perfil, setPerfil] = useState(null);
+
   useEffect(() => {
     if (currentUser) {
       fetchMetrics();
+      fetchPerfil();
     }
   }, [currentUser]);
+
+  const fetchPerfil = async () => {
+    try {
+      const snap = await getDoc(doc(db, 'users', currentUser.uid));
+      if (snap.exists()) setPerfil(snap.data());
+    } catch (e) {
+      console.error('Error cargando el perfil:', e);
+    }
+  };
 
   const fetchMetrics = async () => {
     setLoading(true);
     try {
-      const q = query(
-        collection(db, 'progress_logs'),
-        where('userId', '==', currentUser.uid),
-        where('type', '==', 'metric')
-      );
-      const snap = await getDocs(q);
-      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      // Sort by date ascending
-      data.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-      setMetricsData(data);
+      // `fetchProgressLogs` lee tanto los documentos nuevos (studentId/'Medida')
+      // como los antiguos de esta pantalla (userId/'metric'), ya ordenados.
+      const logs = await fetchProgressLogs(currentUser.uid);
+      setMetricsData(logs.filter(l => l.type === MEASURE_TYPE && l.metric));
     } catch (e) {
       console.error('Error fetching metrics:', e);
     } finally {
@@ -59,16 +72,19 @@ export default function BodyMetrics() {
 
   const handleAddMetric = async (e) => {
     e.preventDefault();
-    if (!newMetricValue) return;
+    const parsed = parseFloat(newMetricValue);
+    if (!Number.isFinite(parsed)) {
+      alert('Introduce un valor numérico válido.');
+      return;
+    }
 
     try {
-      await addDoc(collection(db, 'progress_logs'), {
-        userId: currentUser.uid,
-        type: 'metric',
+      await addDoc(collection(db, 'progress_logs'), buildMeasureLog({
+        studentId: currentUser.uid,
         metric: newMetricType,
         value: parseFloat(newMetricValue),
-        createdAt: new Date().toISOString(),
-      });
+        unit: METRICS_LIST.find(m => m.name === newMetricType)?.unit || '',
+      }));
       setShowAddModal(false);
       setNewMetricValue('');
       setSelectedMetric(newMetricType); // Auto-select the newly added metric
@@ -81,19 +97,20 @@ export default function BodyMetrics() {
 
   // Filter data for the chart based on selected metric
   const chartData = metricsData
-    .filter(m => m.metric === selectedMetric)
+    .filter(m => m.metric === selectedMetric && m.numericValue !== null)
     .map(m => ({
       ...m,
-      dateFormatted: new Date(m.createdAt).toLocaleDateString()
+      value: m.numericValue,
+      dateFormatted: formatDate(m.createdAt)
     }));
 
   const currentUnit = METRICS_LIST.find(m => m.name === selectedMetric)?.unit || '';
 
   // Get latest values for summary cards
   const getLatestValue = (metricName) => {
-    const records = metricsData.filter(m => m.metric === metricName);
+    const records = metricsData.filter(m => m.metric === metricName && m.numericValue !== null);
     if (records.length === 0) return '-';
-    return records[records.length - 1].value;
+    return records[records.length - 1].numericValue;
   };
 
   return (
@@ -112,7 +129,7 @@ export default function BodyMetrics() {
         </button>
       </div>
 
-      <div className="dashboard-grid" style={{ marginBottom: '2rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem' }}>
+      <div className="metrics-summary" style={{ marginBottom: '2rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem' }}>
         <div className="glass" style={{ padding: '1.5rem', borderRadius: 'var(--radius)', textAlign: 'center' }}>
           <h3 style={{ color: 'var(--muted-foreground)', fontSize: '0.9rem', marginBottom: '0.5rem' }}>Peso</h3>
           <p style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{getLatestValue('Peso Corporal')} <span style={{fontSize: '0.9rem'}}>kg</span></p>
@@ -187,6 +204,14 @@ export default function BodyMetrics() {
           </div>
         )}
       </div>
+
+      {/* Evaluación antropométrica y composición corporal
+          (temario Nivel II, diapositivas 104-116) */}
+      <AnthropometryPanel
+        perfil={perfil}
+        studentId={currentUser?.uid}
+        onSaved={fetchMetrics}
+      />
 
       {showAddModal && (
         <div className="modal-overlay">

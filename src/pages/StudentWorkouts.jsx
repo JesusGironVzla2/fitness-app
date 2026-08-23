@@ -2,10 +2,20 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, updateDoc, doc, addDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
-import { Calendar, CheckCircle, MessageSquare, Plus, Dumbbell, ChevronLeft, ChevronRight, Timer, X, Sparkles, Share2 } from 'lucide-react';
+import { Calendar, CheckCircle, Plus, Dumbbell, ChevronLeft, ChevronRight, Timer, X, Sparkles, Share2, History, RotateCcw } from 'lucide-react';
 import { getDoc } from 'firebase/firestore';
 import html2canvas from 'html2canvas';
+import { toDate, toTime, todayKey, formatDate as formatDateSafe } from '../lib/dates';
+import { construirHistorialPorEjercicio, hace, resumirSesion } from '../lib/history';
 import '../styles/global.css';
+
+// Nombres de mes usados por la cabecera del calendario.
+// Faltaban por completo: `monthNames` era una variable no declarada y al
+// renderizar lanzaba "monthNames is not defined", tumbando la página entera.
+const MONTH_NAMES = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+];
 
 export default function StudentWorkouts() {
   const [routines, setRoutines] = useState([]);
@@ -23,7 +33,7 @@ export default function StudentWorkouts() {
   const [routineExercises, setRoutineExercises] = useState([]);
   const [showCreateExerciseModal, setShowCreateExerciseModal] = useState(false);
   const [newExercise, setNewExercise] = useState({ name: '', targetMuscle: 'Pecho', description: '', imageUrl: '' });
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(todayKey());
   
   // AI Generator State
   const [showAIGeneratorModal, setShowAIGeneratorModal] = useState(false);
@@ -43,7 +53,7 @@ export default function StudentWorkouts() {
   
   // Calendar states
   const [calendarMonth, setCalendarMonth] = useState(new Date());
-  const [calendarSelectedDate, setCalendarSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [calendarSelectedDate, setCalendarSelectedDate] = useState(todayKey());
 
   // Social Share State
   const [shareRoutine, setShareRoutine] = useState(null);
@@ -106,6 +116,7 @@ export default function StudentWorkouts() {
   };
 
   const calculatePlates = (totalWeight) => {
+    if (!Number.isFinite(totalWeight)) return [];
     let remaining = (totalWeight - 20) / 2;
     if (remaining <= 0) return [];
     const plates = [20, 10, 5, 2.5, 1.25];
@@ -121,6 +132,7 @@ export default function StudentWorkouts() {
   };
 
   const formatTime = (totalSeconds) => {
+    if (!Number.isFinite(totalSeconds) || totalSeconds < 0) totalSeconds = 0;
     const h = Math.floor(totalSeconds / 3600);
     const m = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
     const s = (totalSeconds % 60).toString().padStart(2, '0');
@@ -145,7 +157,7 @@ export default function StudentWorkouts() {
       const snap = await getDocs(q);
       const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
-      data.sort((a, b) => new Date(a.date) - new Date(b.date));
+      data.sort((a, b) => toTime(a.date) - toTime(b.date));
       
       setRoutines(data);
     } catch (err) {
@@ -193,9 +205,11 @@ export default function StudentWorkouts() {
   };
 
   const handleUpdateRoutineExercise = (index, field, value) => {
-    const updated = [...routineExercises];
-    updated[index][field] = value;
-    setRoutineExercises(updated);
+    // Copiar también el objeto interno: `[...arr]` es una copia superficial y
+    // mutar `updated[index]` modificaba el objeto que React ya tenía renderizado.
+    setRoutineExercises(prev =>
+      prev.map((ex, i) => (i === index ? { ...ex, [field]: value } : ex))
+    );
   };
 
   const handleCreateLiveWorkout = async (e) => {
@@ -223,7 +237,7 @@ export default function StudentWorkouts() {
         studentId: currentUser.uid,
         trainerId: finalTrainerId,
         date: selectedDate,
-        name: routineName || `Entrenamiento Libre - ${new Date(selectedDate + 'T12:00:00Z').toLocaleDateString('es-ES')}`,
+        name: routineName.trim() || `Entrenamiento Libre - ${formatDateSafe(selectedDate)}`,
         exercises: routineExercises,
         createdAt: new Date().toISOString()
       });
@@ -232,7 +246,7 @@ export default function StudentWorkouts() {
       if (finalTrainerId !== currentUser.uid) {
         await addDoc(collection(db, "notifications"), {
           title: "Entrenamiento Libre Registrado",
-          message: `${studentName} registró un entrenamiento libre para el ${new Date(selectedDate + 'T12:00:00Z').toLocaleDateString('es-ES')}.`,
+          message: `${studentName} registró un entrenamiento libre para el ${formatDateSafe(selectedDate)}.`,
           senderId: currentUser.uid,
           senderName: studentName,
           senderRole: 'student',
@@ -441,8 +455,8 @@ Formato requerido:
   };
 
   const formatDate = (dateStr) => {
-    if (!dateStr) return '';
-    const date = new Date(dateStr + 'T12:00:00Z');
+    const date = toDate(dateStr);
+    if (!date) return 'fecha sin definir';
     return date.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' });
   };
 
@@ -543,10 +557,10 @@ Formato requerido:
                 <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '0.5rem', padding: '1rem', marginBottom: 'auto' }}>
                   <p style={{ margin: '0 0 0.5rem 0', fontWeight: 'bold', color: '#a855f7' }}>Highlights:</p>
                   <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.9rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    {shareRoutine.exercises.slice(0, 4).map((ex, idx) => (
+                    {(shareRoutine.exercises || []).slice(0, 4).map((ex, idx) => (
                       <li key={idx}><strong>{ex.name}</strong></li>
                     ))}
-                    {shareRoutine.exercises.length > 4 && <li>Y {shareRoutine.exercises.length - 4} más...</li>}
+                    {(shareRoutine.exercises || []).length > 4 && <li>Y {shareRoutine.exercises.length - 4} más...</li>}
                   </ul>
                 </div>
                 
@@ -604,7 +618,7 @@ Formato requerido:
           <div className="calendar-container glass" style={{ padding: '1.5rem', borderRadius: 'var(--radius)', marginBottom: '2rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
               <button className="btn-secondary" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))} style={{ padding: '0.5rem' }}><ChevronLeft size={20} /></button>
-              <h3 style={{ margin: 0, color: 'white', textTransform: 'capitalize' }}>{monthNames[calendarMonth.getMonth()]} {calendarMonth.getFullYear()}</h3>
+              <h3 style={{ margin: 0, color: 'white', textTransform: 'capitalize' }}>{MONTH_NAMES[calendarMonth.getMonth()]} {calendarMonth.getFullYear()}</h3>
               <button className="btn-secondary" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))} style={{ padding: '0.5rem' }}><ChevronRight size={20} /></button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '0.5rem', textAlign: 'center', marginBottom: '0.5rem' }}>
@@ -658,7 +672,12 @@ Formato requerido:
               {routines.filter(r => r.date === calendarSelectedDate).length === 0 ? (
                 <p style={{ color: 'var(--muted-foreground)' }}>No hay entrenamientos asignados para este día.</p>
               ) : (
-                routines.filter(r => r.date === calendarSelectedDate).map((routine) => (
+                routines.filter(r => r.date === calendarSelectedDate).map((routine) => {
+                  // Historial de cada ejercicio, excluyendo la rutina actual para
+                  // que "la última vez" no se refiera a ella misma.
+                  const historialEjercicios = construirHistorialPorEjercicio(routines, routine.id);
+
+                  return (
                   <div key={routine.id} className="glass active-day" style={{ padding: '1.5rem', borderRadius: 'var(--radius)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -688,10 +707,14 @@ Formato requerido:
                     
                     <div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                        {routine.exercises.map((ex, i) => {
+                        {(routine.exercises || []).length === 0 && (
+                          <p style={{ color: 'var(--muted-foreground)', margin: 0 }}>
+                            Esta rutina no tiene ejercicios.
+                          </p>
+                        )}
+                        {(routine.exercises || []).map((ex, i) => {
                           const exActualData = (routine.actualData && routine.actualData[i]) || {};
                           const fb = (exerciseFeedback[routine.id] || {})[i] || {};
-                          const isCompleted = routine.completed;
                           
                           const repsRaw = fb.reps !== undefined ? fb.reps : (exActualData.reps || `${ex.sets}x${ex.reps}`);
                           const [sStr, rStr] = String(repsRaw).split('x');
@@ -714,6 +737,21 @@ Formato requerido:
                             const newVal = Math.max(0, currentWeight + val);
                             handleExerciseChange(routine.id, i, 'weight', newVal);
                           };
+
+                          // Qué hizo el alumno la última vez con este mismo ejercicio.
+                          const ultima = historialEjercicios.get(ex.exerciseId);
+                          const repetirUltima = () => {
+                            if (!ultima) return;
+                            if (ultima.series && ultima.reps) {
+                              handleExerciseChange(routine.id, i, 'reps', `${ultima.series}x${ultima.reps}`);
+                            }
+                            if (ultima.peso !== null) {
+                              handleExerciseChange(routine.id, i, 'weight', ultima.peso);
+                            }
+                            if (ultima.rir !== null && ultima.rir !== undefined) {
+                              handleExerciseChange(routine.id, i, 'rir', String(ultima.rir));
+                            }
+                          };
                           
                           return (
                             <div key={i} style={{ background: 'rgba(255,255,255,0.05)', padding: '1rem', borderRadius: '4px', fontSize: '0.9rem', opacity: done ? 0.7 : 1, transition: 'opacity 0.2s' }}>
@@ -728,6 +766,31 @@ Formato requerido:
                                 <span style={{ color: 'var(--primary)', marginLeft: 'auto' }}>Meta: {ex.sets}x{ex.reps}</span>
                               </div>
                               
+                              {ultima ? (
+                                <div className="last-session">
+                                  <History size={15} />
+                                  <div className="last-session-text">
+                                    <span className="last-session-label">Última vez ({hace(ultima.fecha)})</span>
+                                    <strong>{resumirSesion(ultima)}</strong>
+                                  </div>
+                                  {!routine.completed && (
+                                    <button
+                                      type="button"
+                                      className="last-session-btn"
+                                      onClick={repetirUltima}
+                                      title="Copiar series, repeticiones y peso de la última vez"
+                                    >
+                                      <RotateCcw size={13} /> Repetir
+                                    </button>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="last-session last-session-empty">
+                                  <History size={15} />
+                                  <span>Primera vez que registras este ejercicio</span>
+                                </div>
+                              )}
+
                               {exerciseImages[ex.exerciseId] && (
                                 <div style={{ marginTop: '0.75rem', marginBottom: '1rem', borderRadius: '8px', overflow: 'hidden', background: 'rgba(0,0,0,0.2)', display: 'flex', justifyContent: 'center' }}>
                                   <img 
@@ -901,7 +964,8 @@ Formato requerido:
                       </div>
                     </div>
                   </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>

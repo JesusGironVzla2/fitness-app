@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, addDoc, orderBy } from 'firebase/firestore';
+import { collection, addDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
-import { TrendingUp, Scale, Plus } from 'lucide-react';
+import { TrendingUp, Plus } from 'lucide-react';
+import { fetchProgressLogs } from '../lib/progress';
+import { formatDate, toNumber } from '../lib/dates';
 import '../styles/global.css';
 
 export default function StudentProgress() {
@@ -25,15 +27,12 @@ export default function StudentProgress() {
 
   const fetchLogs = async () => {
     try {
-      const q = query(
-        collection(db, "progress_logs"), 
-        where("studentId", "==", currentUser.uid),
-        orderBy("createdAt", "desc")
-      );
-      const snap = await getDocs(q);
-      setLogs(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      // Antes: where(studentId) + orderBy(createdAt), que exige un indice
+      // compuesto en Firestore y omitía los registros de Control Corporal.
+      const data = await fetchProgressLogs(currentUser.uid);
+      setLogs([...data].reverse()); // más recientes primero
     } catch (err) {
-      console.error(err);
+      console.error("Error cargando el progreso:", err);
     } finally {
       setLoading(false);
     }
@@ -41,10 +40,20 @@ export default function StudentProgress() {
 
   const handleSaveLog = async (e) => {
     e.preventDefault();
+    const numeric = toNumber(newLog.value, null);
+    if (numeric === null) {
+      alert('Introduce un valor numérico válido.');
+      return;
+    }
     try {
       await addDoc(collection(db, "progress_logs"), {
         studentId: currentUser.uid,
         ...newLog,
+        // "Peso" era un tipo suelto que ninguna otra pantalla reconocía; se
+        // guarda como medida de Peso Corporal para que aparezca en las gráficas.
+        type: newLog.type === 'Peso' ? 'Medida' : newLog.type,
+        metric: newLog.type === 'Peso' ? 'Peso Corporal' : newLog.exerciseOrBodyPart,
+        value: String(numeric),
         createdAt: new Date().toISOString()
       });
       setShowModal(false);
@@ -83,7 +92,7 @@ export default function StudentProgress() {
                   {log.type}
                 </span>
                 <span style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>
-                  {new Date(log.createdAt).toLocaleDateString()}
+                  {formatDate(log.createdAt, 'sin fecha')}
                 </span>
               </div>
               <div>

@@ -3,6 +3,9 @@ import { doc, getDoc, updateDoc, collection, addDoc, getDocs, deleteDoc } from '
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { Save, User, Trash2, AlertTriangle } from 'lucide-react';
+import { buildMeasureLog } from '../lib/progress';
+import { ROLES, roleLabel } from '../lib/roles';
+import { toNumber } from '../lib/dates';
 import '../styles/global.css';
 
 export default function Settings() {
@@ -66,15 +69,14 @@ export default function Settings() {
       });
 
       // If student updated weight, log it in progress automatically
-      if (userRole === 'student' && profile.weight && profile.weight !== oldWeight) {
-        await addDoc(collection(db, "progress_logs"), {
-          studentId: currentUser.uid,
-          type: 'Medida',
-          metric: 'Peso Corporal',
-          value: profile.weight,
-          unit: 'kg',
-          createdAt: new Date().toISOString()
-        });
+      // `profile.weight !== oldWeight` comparaba strings: "75" y "75.0" se
+      // consideraban distintos y duplicaban el registro en cada guardado.
+      const newWeight = toNumber(profile.weight, null);
+      const previousWeight = toNumber(oldWeight, null);
+      if (userRole === ROLES.STUDENT && newWeight !== null && newWeight !== previousWeight) {
+        await addDoc(collection(db, "progress_logs"), buildMeasureLog({
+          studentId: currentUser.uid, metric: 'Peso Corporal', value: newWeight, unit: 'kg'
+        }));
       }
 
       setMessage('Perfil actualizado exitosamente.');
@@ -88,8 +90,19 @@ export default function Settings() {
   };
 
   const handleFactoryReset = async () => {
-    const confirm = window.confirm("¡ATENCIÓN! Estás a punto de borrar TODAS las rutinas (pasadas y futuras) y TODO el historial de progreso de TODOS los alumnos. Esta acción es IRREVERSIBLE. ¿Estás absolutamente seguro?");
-    if (!confirm) return;
+    if (userRole !== ROLES.ADMIN) return; // el botón sólo se muestra al admin, pero la guarda no estaba en la función
+
+    const confirmed = window.confirm("¡ATENCIÓN! Estás a punto de borrar TODAS las rutinas (pasadas y futuras) y TODO el historial de progreso de TODOS los alumnos. Esta acción es IRREVERSIBLE. ¿Estás absolutamente seguro?");
+    if (!confirmed) return;
+
+    // Un solo window.confirm para una operación irreversible que afecta a toda
+    // la base de datos era demasiado fácil de disparar por accidente.
+    const typed = window.prompt('Para confirmar, escribe BORRAR en mayúsculas:');
+    if (typed !== 'BORRAR') {
+      setMessage('Operación cancelada.');
+      setTimeout(() => setMessage(''), 4000);
+      return;
+    }
 
     setResetting(true);
     setMessage('');
@@ -102,9 +115,16 @@ export default function Settings() {
       const logsSnap = await getDocs(collection(db, 'progress_logs'));
       const logPromises = logsSnap.docs.map(d => deleteDoc(d.ref));
       
-      await Promise.all([...workoutPromises, ...logPromises]);
+      const results = await Promise.allSettled([...workoutPromises, ...logPromises]);
+      const failed = results.filter(r => r.status === 'rejected').length;
 
-      setMessage('Base de datos limpiada exitosamente. El historial y rutinas han sido borrados.');
+      // `Promise.all` abortaba al primer rechazo y dejaba el borrado a medias
+      // informando de un error genérico, sin decir cuánto se había borrado.
+      if (failed > 0) {
+        setMessage(`Se borraron ${results.length - failed} registros, pero ${failed} fallaron (revisa los permisos de Firestore).`);
+      } else {
+        setMessage(`Base de datos limpiada exitosamente: ${results.length} registros borrados.`);
+      }
     } catch (err) {
       console.error(err);
       setMessage('Error al intentar borrar la base de datos.');
@@ -134,7 +154,7 @@ export default function Settings() {
             <h2 style={{ margin: '0 0 0.5rem 0' }}>{profile.name || 'Usuario'}</h2>
             <p style={{ margin: 0, color: 'var(--muted-foreground)' }}>{currentUser.email}</p>
             <span className="badge" style={{ marginTop: '0.5rem', display: 'inline-block', background: 'rgba(255,255,255,0.1)' }}>
-              {userRole === 'admin' ? 'Administrador' : userRole === 'trainer' ? 'Entrenador' : 'Alumno'}
+              {roleLabel(userRole)}
             </span>
           </div>
         </div>
@@ -208,7 +228,7 @@ export default function Settings() {
               </select>
             </div>
 
-            {(userRole === 'student' || userRole === 'trainer') && (
+            {(userRole === ROLES.STUDENT || userRole === ROLES.TRAINER) && (
               <>
                 <div className="input-group">
                   <label>Estatura (cm)</label>
@@ -229,7 +249,7 @@ export default function Settings() {
                     value={profile.weight || ''}
                     onChange={(e) => setProfile({...profile, weight: e.target.value})}
                   />
-                  {userRole === 'student' && (
+                  {userRole === ROLES.STUDENT && (
                     <small style={{ color: 'var(--muted-foreground)', marginTop: '0.25rem', display: 'block' }}>
                       Al guardar, el peso se registrará en tu historial de progreso.
                     </small>
@@ -248,7 +268,7 @@ export default function Settings() {
         </form>
       </div>
 
-      {userRole === 'admin' && (
+      {userRole === ROLES.ADMIN && (
         <div className="glass" style={{ padding: '2rem', borderRadius: 'var(--radius)', marginTop: '2rem', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem', color: '#ef4444' }}>
             <AlertTriangle size={24} />

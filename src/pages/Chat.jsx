@@ -3,6 +3,8 @@ import { collection, query, where, getDocs, addDoc, onSnapshot, doc, getDoc } fr
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { Send, User, MessageSquare, ArrowLeft } from 'lucide-react';
+import { toTime, formatTimeOfDay } from '../lib/dates';
+import { ROLES } from '../lib/roles';
 import '../styles/global.css';
 
 export default function Chat() {
@@ -19,13 +21,13 @@ export default function Chat() {
     
     const fetchUsers = async () => {
       try {
-        if (userRole === 'trainer' || userRole === 'admin') {
+        if (userRole === ROLES.TRAINER || userRole === ROLES.ADMIN) {
           // Fetch all students of this trainer
           const q = query(collection(db, "users"), where("role", "==", "student"), where("trainerId", "==", currentUser.uid));
           const snap = await getDocs(q);
           const users = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
           setConversations(users);
-        } else if (userRole === 'student') {
+        } else {
           // Fetch the trainer of this student
           const studentRef = doc(db, "users", currentUser.uid);
           const studentSnap = await getDoc(studentRef);
@@ -68,11 +70,11 @@ export default function Chat() {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       // Sort in memory safely handling both string dates and Firestore Timestamps
-      msgs.sort((a, b) => {
-        const timeA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
-        const timeB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime();
-        return timeA - (isNaN(timeB) ? 0 : timeB);
-      });
+      // El código anterior sólo protegía `timeB` (`timeA - (isNaN(timeB) ? 0 : timeB)`):
+      // si `timeB` no era una fecha válida se restaba 0, devolviendo siempre un
+      // número positivo y desordenando toda la conversación. Y si el que fallaba
+      // era `timeA`, el resultado era NaN y el orden quedaba indefinido.
+      msgs.sort((a, b) => toTime(a.createdAt) - toTime(b.createdAt));
       setMessages(msgs);
       setTimeout(() => scrollToBottom(), 100);
     });
@@ -110,7 +112,7 @@ export default function Chat() {
     <div className="chat-page">
       
       {/* Sidebar for conversations */}
-      {(userRole === 'trainer' || userRole === 'admin') && (
+      {(userRole === ROLES.TRAINER || userRole === ROLES.ADMIN) && (
         <div className={`chat-sidebar glass ${selectedUser ? 'hidden-on-mobile' : ''}`}>
           <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border)' }}>
             <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Mensajes</h2>
@@ -145,11 +147,11 @@ export default function Chat() {
       )}
 
       {/* Chat Area */}
-      <div className={`chat-main glass ${!selectedUser && (userRole === 'trainer' || userRole === 'admin') ? 'hidden-on-mobile' : ''}`}>
+      <div className={`chat-main glass ${!selectedUser && (userRole === ROLES.TRAINER || userRole === ROLES.ADMIN) ? 'hidden-on-mobile' : ''}`}>
         {selectedUser ? (
           <>
             <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              {(userRole === 'trainer' || userRole === 'admin') && (
+              {(userRole === ROLES.TRAINER || userRole === ROLES.ADMIN) && (
                 <button className="chat-back-btn" onClick={() => setSelectedUser(null)}>
                   <ArrowLeft size={24} />
                 </button>
@@ -182,15 +184,7 @@ export default function Chat() {
                         {msg.text}
                       </div>
                       <div style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)', marginTop: '0.25rem', textAlign: isMe ? 'right' : 'left' }}>
-                        {(() => {
-                          try {
-                            const date = msg.createdAt?.toDate ? msg.createdAt.toDate() : new Date(msg.createdAt || Date.now());
-                            if (isNaN(date.getTime())) return '';
-                            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                          } catch (e) {
-                            return '';
-                          }
-                        })()}
+                        {formatTimeOfDay(msg.createdAt)}
                       </div>
                     </div>
                   );

@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, deleteDoc, doc } from 'firebase/firestore';
+import { useSearchParams } from 'react-router-dom';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
-import { Calendar, Plus, Dumbbell, User } from 'lucide-react';
+import { Calendar, Plus, Dumbbell, Trash2 } from 'lucide-react';
+import { todayKey, formatDate } from '../lib/dates';
+import { ROLES } from '../lib/roles';
 import '../styles/global.css';
 
 export default function Workouts() {
@@ -15,7 +18,10 @@ export default function Workouts() {
   
   // Form State
   const [selectedStudent, setSelectedStudent] = useState('');
-  const [selectedDay, setSelectedDay] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDay, setSelectedDay] = useState(todayKey());
+  const [saving, setSaving] = useState(false);
+  const [assignedRoutines, setAssignedRoutines] = useState([]);
+  const [viewStudent, setViewStudent] = useState('');
   const [routineName, setRoutineName] = useState('');
   const [routineExercises, setRoutineExercises] = useState([]); // [{ exerciseId, sets, reps, weight }]
   
@@ -23,12 +29,26 @@ export default function Workouts() {
   const [selectedMuscles, setSelectedMuscles] = useState([]);
 
   const { currentUser } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
     if (currentUser) {
       fetchData();
     }
   }, [currentUser]);
+
+  // "Mis Alumnos" enlaza a /rutinas?student=<id>, pero esta página ignoraba por
+  // completo el parámetro: el entrenador aterrizaba aquí sin ningún alumno
+  // preseleccionado y sin ver sus rutinas.
+  useEffect(() => {
+    const studentParam = searchParams.get('student');
+    if (studentParam && students.some(s => s.id === studentParam)) {
+      setSelectedStudent(studentParam);
+      setViewStudent(studentParam);
+      fetchAssignedRoutines(studentParam);
+      setShowModal(true);
+    }
+  }, [searchParams, students]);
 
   const fetchData = async () => {
     try {
@@ -73,9 +93,11 @@ export default function Workouts() {
   };
 
   const handleUpdateRoutineExercise = (index, field, value) => {
-    const updated = [...routineExercises];
-    updated[index][field] = value;
-    setRoutineExercises(updated);
+    // `[...arr]` sólo copia el array: mutar `updated[index]` modificaba el
+    // mismo objeto que React ya tenía renderizado.
+    setRoutineExercises(prev =>
+      prev.map((ex, i) => (i === index ? { ...ex, [field]: value } : ex))
+    );
   };
 
   const muscleGroups = ['Todos', 'Pecho', 'Espalda', 'Piernas', 'Hombro', 'Bíceps', 'Tríceps', 'Abdomen'];
@@ -98,26 +120,90 @@ export default function Workouts() {
 
   const handleSaveRoutine = async (e) => {
     e.preventDefault();
+    if (saving) return; // sin guardia, un doble clic asignaba la rutina dos veces
     if (!selectedStudent || routineExercises.length === 0) {
       alert("Selecciona un alumno y añade al menos un ejercicio.");
       return;
     }
 
+    setSaving(true);
     try {
+      // `name` podía guardarse vacío y la rutina aparecía sin título en el
+      // panel del alumno.
+      const finalName = routineName.trim() || `Rutina del ${formatDate(selectedDay)}`;
+
       await addDoc(collection(db, "workouts"), {
         studentId: selectedStudent,
         trainerId: currentUser.uid,
         date: selectedDay,
-        name: routineName,
-        exercises: routineExercises,
+        name: finalName,
+        // Series y repeticiones venían de <input> y se guardaban como texto,
+        // así que el cálculo de volumen del Dashboard hacía parseInt sobre "".
+        exercises: routineExercises.map(ex => ({
+          ...ex,
+          sets: Number(ex.sets) > 0 ? Number(ex.sets) : 1,
+          reps: Number(ex.reps) > 0 ? Number(ex.reps) : 1,
+        })),
+        completed: false,
         createdAt: new Date().toISOString()
       });
+
+      // El alumno no recibía ningún aviso al asignarle una rutina.
+      if (selectedStudent !== currentUser.uid) {
+        await addDoc(collection(db, "notifications"), {
+          title: "Nueva rutina asignada",
+          message: `Tu entrenador te asignó "${finalName}" para el ${formatDate(selectedDay)}.`,
+          senderId: currentUser.uid,
+          senderName: currentUser.displayName || currentUser.email || 'Tu entrenador',
+          senderRole: ROLES.TRAINER,
+          targetRole: ROLES.STUDENT,
+          targetUserId: selectedStudent,
+          createdAt: new Date().toISOString()
+        });
+      }
+
       setShowModal(false);
       setRoutineExercises([]);
       setRoutineName('');
+      searchParams.delete('student');
+      setSearchParams(searchParams, { replace: true });
+      await fetchAssignedRoutines(selectedStudent);
       alert("Rutina asignada exitosamente.");
     } catch (err) {
       console.error("Error guardando rutina:", err);
+      alert("No se pudo guardar la rutina: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Listado de rutinas ya asignadas: la página sólo mostraba un cartel de
+  // "en construcción" y no había forma de comprobar lo que ya estaba asignado.
+  const fetchAssignedRoutines = async (studentId) => {
+    if (!studentId) {
+      setAssignedRoutines([]);
+      return;
+    }
+    try {
+      const q = query(collection(db, "workouts"), where("studentId", "==", studentId));
+      const snap = await getDocs(q);
+      const data = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+      setAssignedRoutines(data);
+    } catch (err) {
+      console.error("Error cargando rutinas asignadas:", err);
+    }
+  };
+
+  const handleDeleteRoutine = async (routine) => {
+    if (!window.confirm(`¿Eliminar la rutina "${routine.name || 'sin nombre'}"?`)) return;
+    try {
+      await deleteDoc(doc(db, "workouts", routine.id));
+      await fetchAssignedRoutines(viewStudent);
+    } catch (err) {
+      console.error("Error eliminando rutina:", err);
+      alert("No se pudo eliminar la rutina: " + err.message);
     }
   };
 
@@ -158,11 +244,63 @@ export default function Workouts() {
         </button>
       </div>
 
-      <div className="glass" style={{ padding: '2rem', textAlign: 'center', marginTop: '2rem' }}>
-        <Calendar size={48} color="var(--muted-foreground)" style={{margin: '0 auto 1rem'}} />
-        <h3>Panel de Rutinas en Construcción</h3>
-        <p>Haz clic en "Asignar Rutina" para comenzar a planificar los entrenamientos.</p>
+      <div className="glass" style={{ padding: '1.5rem', borderRadius: 'var(--radius)', marginTop: '1rem' }}>
+        <div className="input-group" style={{ marginBottom: 0, maxWidth: '420px' }}>
+          <label>Ver rutinas asignadas a</label>
+          <select
+            className="input-field"
+            value={viewStudent}
+            disabled={loading}
+            onChange={(e) => { setViewStudent(e.target.value); fetchAssignedRoutines(e.target.value); }}
+          >
+            <option value="">{loading ? 'Cargando alumnos…' : 'Selecciona un alumno…'}</option>
+            {students.map(s => (
+              <option key={s.id} value={s.id}>{s.name || s.email}</option>
+            ))}
+          </select>
+        </div>
       </div>
+
+      {viewStudent && (
+        <div style={{ marginTop: '1.5rem' }}>
+          {assignedRoutines.length === 0 ? (
+            <div className="empty-state glass">
+              <Calendar size={48} color="var(--muted-foreground)" />
+              <h3>Sin rutinas asignadas</h3>
+              <p>Pulsa "Asignar Rutina" para planificar el primer entrenamiento.</p>
+            </div>
+          ) : (
+            <div className="grid">
+              {assignedRoutines.map(r => (
+                <div key={r.id} className="trainer-card glass">
+                  <div>
+                    <h3 style={{ fontSize: '1.05rem', marginBottom: '0.35rem' }}>{r.name || 'Rutina sin nombre'}</h3>
+                    <span className="date">{formatDate(r.date, 'sin fecha')}</span>
+                  </div>
+                  <ul style={{ margin: 0, paddingLeft: '1.25rem', color: 'var(--muted-foreground)', fontSize: '0.9rem' }}>
+                    {(r.exercises || []).slice(0, 5).map((ex, i) => (
+                      <li key={i}>{ex.name} · {ex.sets}x{ex.reps}</li>
+                    ))}
+                    {(r.exercises || []).length > 5 && <li>y {r.exercises.length - 5} más…</li>}
+                  </ul>
+                  <div className="trainer-footer">
+                    <span className="badge" style={r.completed ? undefined : { background: 'rgba(255,255,255,0.08)', color: 'var(--muted-foreground)' }}>
+                      {r.completed ? 'Completada' : 'Pendiente'}
+                    </span>
+                    <button
+                      className="text-btn"
+                      style={{ color: 'var(--destructive)', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                      onClick={() => handleDeleteRoutine(r)}
+                    >
+                      <Trash2 size={16} /> Eliminar
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {showModal && (
         <div className="modal-overlay">

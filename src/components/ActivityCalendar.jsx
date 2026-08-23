@@ -1,4 +1,5 @@
 import React from 'react';
+import { workoutDate } from '../lib/dates';
 
 export default function ActivityCalendar({ workouts }) {
   // Generate last 12 weeks
@@ -12,12 +13,18 @@ export default function ActivityCalendar({ workouts }) {
   const heatmap = Array.from({ length: weeks }, () => Array(days).fill(0));
   
   // For each workout, find its place in the grid
-  workouts.forEach(w => {
+  (workouts || []).forEach(w => {
     if(w.completed) {
-      const wDate = new Date(w.date || w.completedAt);
+      const parsed = workoutDate(w);
+      if (!parsed) return; // rutinas sin fecha reventaban el cálculo
+      const wDate = new Date(parsed);
       wDate.setHours(0,0,0,0);
-      const diffTime = Math.abs(today - wDate);
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      // `Math.abs` hacía que una rutina con fecha futura se pintase en el
+      // pasado. Y `Math.ceil` sobre un día con cambio de hora (23h) daba 1 en
+      // lugar de 0, desplazando la casilla un día.
+      const diffTime = today - wDate;
+      if (diffTime < 0) return;
+      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
       
       // Calculate day of week (0 is Sunday, 1 is Monday...)
       const dayIdx = wDate.getDay(); 

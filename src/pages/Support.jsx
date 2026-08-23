@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { collection, query, where, onSnapshot, addDoc, doc, getDoc, getDocs } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { Send, UserCircle2, MessageSquare } from 'lucide-react';
+import { toTime, formatTimeOfDay } from '../lib/dates';
+import { ROLES } from '../lib/roles';
 import '../styles/global.css';
 
 export default function Support() {
@@ -23,14 +25,22 @@ export default function Support() {
   useEffect(() => {
     if (!currentUser) return;
 
-    if (userRole === 'admin') {
+    if (userRole === ROLES.ADMIN) {
       // Admin: Fetch all users to show in the sidebar (ideally only those who messaged support, but for simplicity, we show trainers and students)
       const fetchUsers = async () => {
-        const usersRef = collection(db, "users");
-        const q = query(usersRef, where("role", "in", ["trainer", "student", "user"]));
-        const snap = await getDocs(q);
-        const usersList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        setConversations(usersList);
+        try {
+          const usersRef = collection(db, "users");
+          const q = query(usersRef, where("role", "in", ["trainer", "student", "user"]));
+          const snap = await getDocs(q);
+          // Se colaban cuentas eliminadas y suspendidas en la lista de tickets.
+          const usersList = snap.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .filter(u => u.status !== 'deleted')
+            .sort((a, b) => String(a.name || a.email || '').localeCompare(String(b.name || b.email || '')));
+          setConversations(usersList);
+        } catch (err) {
+          console.error("Error cargando usuarios de soporte:", err);
+        }
       };
       fetchUsers();
     } else {
@@ -44,7 +54,7 @@ export default function Support() {
     
     let currentChatId = null;
     
-    if (userRole === 'admin') {
+    if (userRole === ROLES.ADMIN) {
       if (!selectedUser) {
         setMessages([]);
         return;
@@ -61,11 +71,9 @@ export default function Support() {
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      msgs.sort((a, b) => {
-        const timeA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
-        const timeB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime();
-        return timeA - (isNaN(timeB) ? 0 : timeB);
-      });
+      // Mismo fallo de ordenación que en Chat.jsx: la guarda contra NaN sólo
+      // cubría uno de los dos operandos.
+      msgs.sort((a, b) => toTime(a.createdAt) - toTime(b.createdAt));
       setMessages(msgs);
       setTimeout(() => scrollToBottom(), 100);
     });
@@ -76,10 +84,10 @@ export default function Support() {
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
-    if (userRole === 'admin' && !selectedUser) return;
+    if (userRole === ROLES.ADMIN && !selectedUser) return;
 
-    const currentChatId = userRole === 'admin' ? `support_${selectedUser.id}` : `support_${currentUser.uid}`;
-    const receiverId = userRole === 'admin' ? selectedUser.id : 'admin'; // 'admin' is a conceptual ID here
+    const currentChatId = userRole === ROLES.ADMIN ? `support_${selectedUser.id}` : `support_${currentUser.uid}`;
+    const receiverId = userRole === ROLES.ADMIN ? selectedUser.id : 'admin'; // 'admin' is a conceptual ID here
 
     const msgText = newMessage.trim();
     setNewMessage('');
@@ -102,7 +110,7 @@ export default function Support() {
     <div className="chat-page" style={{ display: 'flex', height: 'calc(100vh - 120px)', gap: '1.5rem' }}>
       
       {/* Sidebar for Admin to see users */}
-      {userRole === 'admin' && (
+      {userRole === ROLES.ADMIN && (
         <div className="chat-sidebar glass" style={{ width: '300px', display: 'flex', flexDirection: 'column' }}>
           <div style={{ padding: '1.5rem', borderBottom: '1px solid var(--border)' }}>
             <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Tickets de Soporte</h2>
@@ -162,22 +170,22 @@ export default function Support() {
             justifyContent: 'center',
             fontWeight: 'bold'
           }}>
-            {userRole === 'admin' ? (selectedUser ? selectedUser.name?.charAt(0) || 'U' : '?') : 'A'}
+            {userRole === ROLES.ADMIN ? (selectedUser ? selectedUser.name?.charAt(0) || 'U' : '?') : 'A'}
           </div>
           <div>
             <h2 style={{ margin: 0, fontSize: '1.25rem' }}>
-              {userRole === 'admin' 
+              {userRole === ROLES.ADMIN 
                 ? (selectedUser ? selectedUser.name || selectedUser.email : 'Selecciona un usuario') 
                 : 'Soporte CoachNode'}
             </h2>
             <div style={{ fontSize: '0.85rem', color: 'var(--muted-foreground)' }}>
-              {userRole === 'admin' ? 'Ticket de ayuda' : 'Comunícate directamente con el administrador'}
+              {userRole === ROLES.ADMIN ? 'Ticket de ayuda' : 'Comunícate directamente con el administrador'}
             </div>
           </div>
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {(userRole === 'admin' && !selectedUser) ? (
+          {(userRole === ROLES.ADMIN && !selectedUser) ? (
             <div style={{ textAlign: 'center', color: 'var(--muted-foreground)', marginTop: 'auto', marginBottom: 'auto' }}>
               Selecciona un ticket de la lista para ver los mensajes.
             </div>
@@ -212,15 +220,7 @@ export default function Support() {
                     {msg.text}
                   </div>
                   <div style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)', marginTop: '0.25rem', textAlign: isMe ? 'right' : 'left' }}>
-                    {(() => {
-                      try {
-                        const date = msg.createdAt?.toDate ? msg.createdAt.toDate() : new Date(msg.createdAt || Date.now());
-                        if (isNaN(date.getTime())) return '';
-                        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                      } catch (e) {
-                        return '';
-                      }
-                    })()}
+                    {formatTimeOfDay(msg.createdAt)}
                   </div>
                 </div>
               );
@@ -230,7 +230,7 @@ export default function Support() {
         </div>
 
         {/* Message Input */}
-        {(!userRole || (userRole === 'admin' && selectedUser) || userRole !== 'admin') && (
+        {(!userRole || (userRole === ROLES.ADMIN && selectedUser) || userRole !== 'admin') && (
           <div style={{ padding: '1.5rem', borderTop: '1px solid var(--border)' }}>
             <form onSubmit={handleSendMessage} style={{ display: 'flex', gap: '1rem' }}>
               <input

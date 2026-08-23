@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, doc, setDoc, orderBy, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, setDoc, addDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { db, secondaryAuth } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
-import { UserPlus, Mail, Key, Activity, TrendingUp, ClipboardList, UserSquare2 } from 'lucide-react';
+import { UserPlus, Mail, Key, Activity, TrendingUp, ClipboardList, Search, X, KeyRound } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { buildMeasureLog, fetchProgressLogs } from '../lib/progress';
+import { formatDate, toNumber } from '../lib/dates';
+import { ROLES } from '../lib/roles';
 import '../styles/global.css';
 
 export default function Students() {
@@ -25,14 +28,23 @@ export default function Students() {
     height: ''
   });
   const [actionError, setActionError] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  // Búsqueda y filtro por estado: con más de una decena de alumnos, la rejilla
+  // era scroll puro y no había forma de encontrar a nadie.
+  const [busqueda, setBusqueda] = useState('');
+  const [filtroEstado, setFiltroEstado] = useState('todos'); // todos | activos | suspendidos
+
+  // Aviso del envío de enlace de acceso, por alumno.
+  const [accesoEnviado, setAccesoEnviado] = useState({});
   
   // States for viewing progress
   const [showProgressModal, setShowProgressModal] = useState(false);
   const [selectedStudentProgress, setSelectedStudentProgress] = useState([]);
   const [selectedStudentWorkouts, setSelectedStudentWorkouts] = useState([]);
+  const [showWorkoutsModal, setShowWorkoutsModal] = useState(false);
   const [selectedStudentName, setSelectedStudentName] = useState('');
   const [loadingProgress, setLoadingProgress] = useState(false);
-  const [showWorkoutsModal, setShowWorkoutsModal] = useState(false);
   
   // States for measures
   const [showMetricsModal, setShowMetricsModal] = useState(false);
@@ -43,35 +55,38 @@ export default function Students() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [editStudent, setEditStudent] = useState(null);
   
-  const { currentUser, userRole, impersonate } = useAuth();
+  const { currentUser, userRole, impersonate, resetPassword } = useAuth();
 
   const handleSaveMetrics = async (e) => {
     e.preventDefault();
+
+    const weight = toNumber(metricData.weight, null);
+    const fat = toNumber(metricData.fat, null);
+
+    // Antes bastaba con que el campo no estuviese vacío: escribir "abc"
+    // guardaba un log con valor no numérico que rompía las gráficas.
+    if (weight === null && fat === null) {
+      setActionError('Introduce al menos un valor numérico.');
+      return;
+    }
+
     try {
-      if (metricData.weight) {
-        await addDoc(collection(db, "progress_logs"), {
-          studentId: selectedStudentId,
-          type: 'Medida',
-          metric: 'Peso Corporal',
-          value: metricData.weight,
-          unit: 'kg',
-          createdAt: new Date().toISOString()
-        });
+      if (weight !== null) {
+        await addDoc(collection(db, "progress_logs"), buildMeasureLog({
+          studentId: selectedStudentId, metric: 'Peso Corporal', value: weight, unit: 'kg'
+        }));
       }
-      if (metricData.fat) {
-        await addDoc(collection(db, "progress_logs"), {
-          studentId: selectedStudentId,
-          type: 'Medida',
-          metric: '% Grasa',
-          value: metricData.fat,
-          unit: '%',
-          createdAt: new Date().toISOString()
-        });
+      if (fat !== null) {
+        await addDoc(collection(db, "progress_logs"), buildMeasureLog({
+          studentId: selectedStudentId, metric: '% Grasa', value: fat, unit: '%'
+        }));
       }
       setShowMetricsModal(false);
       setMetricData({ weight: '', fat: '' });
+      setActionError('');
     } catch (err) {
       console.error("Error saving metrics:", err);
+      setActionError('No se pudieron guardar las medidas: ' + err.message);
     }
   };
 
@@ -100,14 +115,16 @@ export default function Students() {
 
   const handleCreateStudent = async (e) => {
     e.preventDefault();
+    if (creating) return; // el formulario no se bloqueaba: doble clic creaba dos cuentas
     setActionError('');
+    setCreating(true);
     try {
-      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newStudent.email, newStudent.password);
+      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newStudent.email.trim(), newStudent.password);
       
       await setDoc(doc(db, "users", userCredential.user.uid), {
-        email: newStudent.email,
-        name: newStudent.name,
-        role: 'student',
+        email: newStudent.email.trim(),
+        name: newStudent.name.trim(),
+        role: ROLES.STUDENT,
         status: 'active',
         trainerId: currentUser.uid,
         trainingType: newStudent.trainingType,
@@ -120,15 +137,11 @@ export default function Students() {
         createdAt: new Date().toISOString()
       });
 
-      if (newStudent.weight) {
-        await addDoc(collection(db, "progress_logs"), {
-          studentId: userCredential.user.uid,
-          type: 'Medida',
-          metric: 'Peso Corporal',
-          value: newStudent.weight,
-          unit: 'kg',
-          createdAt: new Date().toISOString()
-        });
+      const initialWeight = toNumber(newStudent.weight, null);
+      if (initialWeight !== null) {
+        await addDoc(collection(db, "progress_logs"), buildMeasureLog({
+          studentId: userCredential.user.uid, metric: 'Peso Corporal', value: initialWeight, unit: 'kg'
+        }));
       }
 
       await secondaryAuth.signOut();
@@ -142,12 +155,52 @@ export default function Students() {
 
     } catch (err) {
       console.error("Error creating student:", err);
-      setActionError(err.message);
+      if (err.code === 'auth/email-already-in-use') {
+        setActionError('Ya existe una cuenta con ese correo.');
+      } else if (err.code === 'auth/weak-password') {
+        setActionError('La contraseña debe tener al menos 6 caracteres.');
+      } else if (err.code === 'auth/invalid-email') {
+        setActionError('El correo no tiene un formato válido.');
+      } else {
+        setActionError(err.message);
+      }
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  /**
+   * Envía al alumno un enlace para que se ponga su propia contraseña.
+   * Antes, la contraseña inicial la inventaba el entrenador y había que
+   * comunicarla por fuera de la app; si el alumno la perdía, no había vuelta atrás.
+   */
+  const handleEnviarAcceso = async (student) => {
+    if (!student.email) {
+      setActionError('Este alumno no tiene correo registrado.');
+      return;
+    }
+    setAccesoEnviado(prev => ({ ...prev, [student.id]: 'enviando' }));
+    try {
+      await resetPassword(student.email);
+      setAccesoEnviado(prev => ({ ...prev, [student.id]: 'ok' }));
+    } catch (err) {
+      console.error('Error enviando el acceso:', err);
+      setAccesoEnviado(prev => ({ ...prev, [student.id]: 'error' }));
+      setActionError('No se pudo enviar el enlace: ' + err.message);
+    } finally {
+      setTimeout(() => {
+        setAccesoEnviado(prev => {
+          const copia = { ...prev };
+          delete copia[student.id];
+          return copia;
+        });
+      }, 5000);
     }
   };
 
   const handleUpdateStatus = async (studentId, newStatus) => {
-    if (newStatus === 'deleted' && !window.confirm("¿Seguro que deseas eliminar a este alumno?")) return;
+    if (newStatus === 'deleted' && !window.confirm("¿Seguro que deseas eliminar a este alumno? No podrá volver a iniciar sesión.")) return;
+    if (newStatus === 'suspended' && !window.confirm("El alumno no podrá iniciar sesión mientras esté suspendido. ¿Continuar?")) return;
     
     try {
       await updateDoc(doc(db, "users", studentId), { status: newStatus });
@@ -197,13 +250,11 @@ export default function Students() {
     setSelectedStudentProgress([]);
     
     try {
-      const q = query(
-        collection(db, "progress_logs"),
-        where("studentId", "==", student.id),
-        orderBy("createdAt", "desc")
-      );
-      const snap = await getDocs(q);
-      setSelectedStudentProgress(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      // `where(...) + orderBy(...)` exige un índice compuesto en Firestore: si no
+      // existe, la consulta falla y el modal se quedaba vacío sin explicación.
+      // Además ignoraba los registros de Control Corporal (campo `userId`).
+      const logs = await fetchProgressLogs(student.id);
+      setSelectedStudentProgress([...logs].reverse());
     } catch (err) {
       console.error("Error fetching progress:", err);
     } finally {
@@ -216,21 +267,31 @@ export default function Students() {
     setShowWorkoutsModal(true);
     setLoadingProgress(true);
     setSelectedStudentWorkouts([]);
-    
+
     try {
-      const q = query(
-        collection(db, "workouts"),
-        where("studentId", "==", student.id),
-        orderBy("date", "desc")
-      );
+      const q = query(collection(db, "workouts"), where("studentId", "==", student.id));
       const snap = await getDocs(q);
-      setSelectedStudentWorkouts(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const data = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+      setSelectedStudentWorkouts(data);
     } catch (err) {
       console.error("Error fetching workouts:", err);
     } finally {
       setLoadingProgress(false);
     }
   };
+
+  const termino = busqueda.trim().toLowerCase();
+  const alumnosFiltrados = students.filter(st => {
+    if (filtroEstado === 'activos' && st.status === 'suspended') return false;
+    if (filtroEstado === 'suspendidos' && st.status !== 'suspended') return false;
+    if (!termino) return true;
+    return [st.name, st.email, st.phone]
+      .some(campo => String(campo || '').toLowerCase().includes(termino));
+  });
+
+  const totalSuspendidos = students.filter(st => st.status === 'suspended').length;
 
   return (
     <div className="trainers-page">
@@ -245,6 +306,46 @@ export default function Students() {
         </button>
       </div>
 
+      {actionError && !showModal && (
+        <div className="error-message" style={{ marginBottom: '1rem' }}>{actionError}</div>
+      )}
+
+      {students.length > 0 && (
+        <div className="students-toolbar">
+          <div className="students-search">
+            <Search size={18} />
+            <input
+              type="search"
+              placeholder="Buscar por nombre, correo o teléfono…"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+            />
+            {busqueda && (
+              <button type="button" className="students-clear" onClick={() => setBusqueda('')} aria-label="Limpiar búsqueda">
+                <X size={16} />
+              </button>
+            )}
+          </div>
+
+          <div className="students-filters">
+            {[
+              { id: 'todos', label: `Todos (${students.length})` },
+              { id: 'activos', label: `Activos (${students.length - totalSuspendidos})` },
+              { id: 'suspendidos', label: `Suspendidos (${totalSuspendidos})` },
+            ].map(f => (
+              <button
+                key={f.id}
+                type="button"
+                className={`students-chip ${filtroEstado === f.id ? 'on' : ''}`}
+                onClick={() => setFiltroEstado(f.id)}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="trainers-list">
         {loading ? (
           <p>Cargando alumnos...</p>
@@ -254,9 +355,18 @@ export default function Students() {
             <h3>Aún no tienes alumnos</h3>
             <p>Registra a tu primer alumno para comenzar a entrenarlo.</p>
           </div>
+        ) : alumnosFiltrados.length === 0 ? (
+          <div className="empty-state glass">
+            <Search size={48} color="var(--muted-foreground)" />
+            <h3>Sin resultados</h3>
+            <p>Ningún alumno coincide con la búsqueda o el filtro aplicado.</p>
+            <button className="btn-secondary" onClick={() => { setBusqueda(''); setFiltroEstado('todos'); }}>
+              Limpiar filtros
+            </button>
+          </div>
         ) : (
           <div className="grid">
-            {students.map(student => (
+            {alumnosFiltrados.map(student => (
               <div key={student.id} className="trainer-card glass">
                 <div className="trainer-header">
                   <div className="avatar" style={{backgroundColor: '#3b82f6'}}>{student.name ? student.name.charAt(0).toUpperCase() : 'A'}</div>
@@ -270,7 +380,7 @@ export default function Students() {
                   <span className={`badge ${student.status === 'suspended' ? 'suspended' : ''}`}>
                     {student.status === 'suspended' ? 'Suspendido' : 'Activo'}
                   </span>
-                  <span className="date">Registrado el {new Date(student.createdAt).toLocaleDateString()}</span>
+                  <span className="date">Registrado el {formatDate(student.createdAt, 'fecha desconocida')}</span>
                   
                   <div className="student-actions">
                     <button className="btn-secondary" onClick={() => { setEditStudent(student); setShowProfileModal(true); }}>
@@ -283,14 +393,31 @@ export default function Students() {
                     </button>
                     <button className="btn-secondary" onClick={() => navigate(`/rutinas?student=${student.id}`)}>
                       <ClipboardList size={16} style={{marginRight: '0.5rem'}} />
-                      Rutinas
+                      Asignar
+                    </button>
+                    <button className="btn-secondary" onClick={() => handleViewWorkouts(student)}>
+                      <ClipboardList size={16} style={{marginRight: '0.5rem'}} />
+                      Historial
                     </button>
                     <button className="btn-secondary" onClick={() => { setSelectedStudentId(student.id); setSelectedStudentName(student.name); setShowMetricsModal(true); }}>
                       <Activity size={16} style={{marginRight: '0.5rem'}} />
                       Medidas
                     </button>
+                    <button
+                      className="btn-secondary"
+                      style={{ gridColumn: 'span 2' }}
+                      onClick={() => handleEnviarAcceso(student)}
+                      disabled={accesoEnviado[student.id] === 'enviando'}
+                      title="Envía al alumno un correo para que cree su propia contraseña"
+                    >
+                      <KeyRound size={16} style={{marginRight: '0.5rem'}} />
+                      {accesoEnviado[student.id] === 'enviando' ? 'Enviando…'
+                        : accesoEnviado[student.id] === 'ok' ? '✓ Enlace enviado'
+                        : accesoEnviado[student.id] === 'error' ? 'No se pudo enviar'
+                        : 'Enviar acceso'}
+                    </button>
                     
-                    {userRole === 'admin' && (
+                    {userRole === ROLES.ADMIN && (
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '1rem' }}>
                         <button className="btn-secondary" onClick={() => { impersonate(student); navigate('/'); }}>Entrar</button>
                         <button 
@@ -304,7 +431,7 @@ export default function Students() {
                       </div>
                     )}
 
-                    {userRole === 'trainer' && (
+                    {userRole === ROLES.TRAINER && (
                       <button className="btn-secondary" style={{ width: '100%', marginTop: '0.5rem' }} onClick={() => { impersonate(student); navigate('/'); }}>
                         Ver Panel del Alumno
                       </button>
@@ -404,8 +531,8 @@ export default function Students() {
               </div>
 
               <div className="modal-actions" style={{ marginTop: '1.5rem' }}>
-                <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>Cancelar</button>
-                <button type="submit" className="btn-primary">Crear Alumno</button>
+                <button type="button" className="btn-secondary" onClick={() => setShowModal(false)} disabled={creating}>Cancelar</button>
+                <button type="submit" className="btn-primary" disabled={creating}>{creating ? 'Creando...' : 'Crear Alumno'}</button>
               </div>
             </form>
           </div>
@@ -586,7 +713,7 @@ export default function Students() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                       <h4 style={{ margin: 0, color: 'white' }}>{workout.name}</h4>
                       <span style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>
-                        {workout.date}
+                        {formatDate(workout.date, 'sin fecha')}
                       </span>
                     </div>
                     

@@ -176,8 +176,16 @@ select option {
   background: rgba(0, 0, 0, 0.7);
   backdrop-filter: blur(4px);
   display: flex;
-  align-items: center;
+  /* `align-items: center` recortaba por arriba los formularios más altos que
+     la pantalla, y sin scroll en la capa esos campos quedaban inalcanzables:
+     en un móvil corto no había forma de llegar a "Nombre" ni "Correo".
+     Con flex-start + margin auto en el modal, se centra cuando cabe y se puede
+     desplazar cuando no. */
+  align-items: flex-start;
   justify-content: center;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   z-index: 100;
   padding: 1rem;
 }
@@ -191,6 +199,7 @@ select option {
   background: rgba(24, 24, 27, 0.95);
   border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+  margin: auto;
 }
 
 .modal h2 {
@@ -293,5 +302,433 @@ select option {
   /* Chat height fix for mobile */
   .chat-page {
     height: calc(100vh - 120px) !important; 
+  }
+}
+
+/* ---------------------------------------------------------------
+   Animaciones globales
+   (antes vivían dentro del <style> de Dashboard.jsx, por lo que
+   .modal y el spinner sólo animaban estando en el Dashboard)
+   --------------------------------------------------------------- */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---------------------------------------------------------------
+   Layout compartido de listados / tarjetas
+   (antes vivían dentro del <style> de Trainers.jsx, por lo que
+   Alumnos, Ejercicios, Progreso y Soporte se veían sin estilos
+   para cualquiera que no fuese admin)
+   --------------------------------------------------------------- */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1.5rem;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  text-align: center;
+  border-radius: var(--radius);
+  gap: 1rem;
+}
+
+.empty-state h3 {
+  font-size: 1.5rem;
+}
+
+.empty-state p {
+  color: var(--muted-foreground);
+}
+
+.trainer-card {
+  padding: 1.5rem;
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.trainer-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.trainer-header h3 {
+  font-size: 1.1rem;
+  margin-bottom: 0.25rem;
+}
+
+.trainer-header p {
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+  word-break: break-all;
+}
+
+.trainer-header .avatar {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1.25rem;
+}
+
+.trainer-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.student-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.student-actions .btn-secondary {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.date {
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+}
+
+.badge.suspended {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--destructive);
+}
+
+.text-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+  transition: color 0.2s;
+}
+
+.error-message {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: var(--destructive);
+  padding: 0.75rem;
+  border-radius: calc(var(--radius) - 4px);
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  word-break: break-word;
+}
+
+.exercises-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.5rem;
+}
+
+/* ---------------------------------------------------------------
+   Barra de búsqueda y filtros del listado de alumnos
+   --------------------------------------------------------------- */
+.students-toolbar {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+}
+
+.students-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.students-search > svg {
+  position: absolute;
+  left: 0.9rem;
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+
+.students-search input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  color: var(--foreground);
+  padding: 0.7rem 2.5rem;
+  border-radius: 999px;
+  outline: none;
+  font-size: 0.9rem;
+  transition: border-color 0.2s;
+}
+
+.students-search input:focus {
+  border-color: var(--primary);
+}
+
+/* El navegador pinta su propia "x" en los input[type=search]; se oculta
+   para no duplicarla con la nuestra. */
+.students-search input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.students-clear {
+  position: absolute;
+  right: 0.75rem;
+  background: transparent;
+  border: none;
+  color: var(--muted-foreground);
+  display: flex;
+  padding: 0.25rem;
+}
+
+.students-clear:hover {
+  color: var(--foreground);
+}
+
+.students-filters {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.students-chip {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.students-chip.on {
+  background: rgba(163, 230, 53, 0.12);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+@media (max-width: 768px) {
+  .students-toolbar { flex-direction: column; align-items: stretch; }
+  .students-filters { justify-content: space-between; }
+  .students-chip { flex: 1; text-align: center; }
+}
+
+/* ---------------------------------------------------------------
+   "Última vez levantaste…" dentro de cada ejercicio de la rutina
+   --------------------------------------------------------------- */
+.last-session {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: calc(var(--radius) - 4px);
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  color: #93c5fd;
+  font-size: 0.82rem;
+}
+
+.last-session-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+  min-width: 0;
+}
+
+.last-session-label {
+  font-size: 0.75rem;
+  opacity: 0.8;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  font-weight: 600;
+}
+
+.last-session-text strong {
+  color: #fff;
+  font-size: 0.9rem;
+}
+
+.last-session-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  color: #93c5fd;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.last-session-btn:hover {
+  background: rgba(59, 130, 246, 0.28);
+  color: #fff;
+}
+
+.last-session-empty {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: var(--border);
+  color: var(--muted-foreground);
+}
+
+/* ---------------------------------------------------------------
+   Aviso de conexión perdida (la app sigue funcionando offline)
+   --------------------------------------------------------------- */
+.offline-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: rgba(234, 179, 8, 0.15);
+  border-bottom: 1px solid rgba(234, 179, 8, 0.35);
+  color: #eab308;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+/* ---------------------------------------------------------------
+   Áreas táctiles mínimas en pantallas pequeñas
+   Auditado con Chrome real a 320/360/390/430 px: varios controles
+   quedaban por debajo de 30px de alto, imposibles de pulsar con
+   precisión. 44px es el mínimo recomendado por Apple y Material.
+   --------------------------------------------------------------- */
+@media (max-width: 768px) {
+  button,
+  select,
+  .btn-primary,
+  .btn-secondary,
+  .badge[type="button"] {
+    min-height: 44px;
+  }
+
+  /* Los enlaces de texto ("¿Olvidaste tu contraseña?") no tenían relleno,
+     así que su zona pulsable era sólo la altura de la línea. */
+  .text-btn {
+    padding: 0.75rem 0.5rem;
+    min-height: 44px;
+  }
+
+  /* Casillas de "ejercicio hecho": el objetivo más pulsado de la app. */
+  input[type="checkbox"] {
+    min-width: 24px;
+    min-height: 24px;
+  }
+
+  /* Los <select> nativos necesitan relleno propio para respetar el mínimo. */
+  select {
+    padding-top: 0.6rem;
+    padding-bottom: 0.6rem;
+  }
+}
+
+/* Evita el zoom automático de iOS al enfocar un campo: Safari amplía la
+   página cuando la fuente del input baja de 16px. */
+@media (max-width: 768px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* ---------------------------------------------------------------
+   Colocación del asistente flotante
+   Su botón usa `position: fixed; left: 2rem` en línea, así que sólo
+   se puede reposicionar desde fuera con !important. Se hace aquí,
+   en el contenedor que le pone Layout, para no modificar el
+   componente del asistente.
+   --------------------------------------------------------------- */
+/* Por debajo de la capa de los modales (100) y del menú lateral (50): antes
+   compartía z-index con el modal y, al ir después en el DOM, tapaba los campos
+   del formulario. */
+.ai-coach-slot > button,
+.ai-coach-slot > div {
+  z-index: 30 !important;
+}
+
+@media (min-width: 769px) {
+  /* En escritorio quedaba encima del menú lateral (260px), tapando los
+     últimos enlaces de navegación. */
+  .ai-coach-slot > button,
+  .ai-coach-slot > div {
+    left: calc(260px + 1.5rem) !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .ai-coach-slot > button {
+    left: 1rem !important;
+    bottom: 1rem !important;
+  }
+
+  .ai-coach-slot > div {
+    left: 1rem !important;
+    width: calc(100vw - 2rem) !important;
+    max-width: 360px;
+    height: min(500px, calc(100vh - 6rem)) !important;
+  }
+
+  /* Con el menú abierto, el botón caía justo sobre "Cerrar Sesión" y lo
+     dejaba a medias sin poder pulsarse. */
+  .ai-coach-slot.oculto {
+    display: none;
+  }
+}
+
+/* ---------------------------------------------------------------
+   Tarjetas de resumen de Control Corporal
+   Llevaban la clase .dashboard-grid, que en móvil se fuerza a una
+   sola columna. Cuatro cifras cortas (peso, % grasa, cintura,
+   brazos) ocupando una fila entera cada una obligaba a hacer
+   scroll para ver algo que cabe de sobra en dos columnas.
+   --------------------------------------------------------------- */
+.metrics-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1rem;
+}
+
+@media (max-width: 768px) {
+  .metrics-summary {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+  }
+
+  .metrics-summary > .glass {
+    padding: 1rem 0.75rem !important;
   }
 }

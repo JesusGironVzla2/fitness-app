@@ -9,10 +9,20 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [aviso, setAviso] = useState('');
   const [loading, setLoading] = useState(false);
+  const [enviandoReset, setEnviandoReset] = useState(false);
   
   const navigate = useNavigate();
-  const { login, signup } = useAuth();
+  const { login, signup, resetPassword, authError, clearAuthError } = useAuth();
+
+  // Si la sesión se cerró sola por cuenta suspendida/eliminada, mostrar el motivo.
+  React.useEffect(() => {
+    if (authError) {
+      setError(authError);
+      clearAuthError();
+    }
+  }, [authError, clearAuthError]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -20,10 +30,11 @@ export default function Login() {
     setLoading(true);
 
     try {
+      const cleanEmail = email.trim();
       if (isRegister) {
-        await signup(email, password, 'admin'); // Por ahora crea admins por defecto
+        await signup(cleanEmail, password, 'admin'); // Por ahora crea admins por defecto
       } else {
-        await login(email, password);
+        await login(cleanEmail, password);
       }
       navigate('/dashboard');
     } catch (err) {
@@ -34,12 +45,43 @@ export default function Login() {
       else if (err.code === 'auth/weak-password') errorMsg = 'La contraseña debe tener al menos 6 caracteres.';
       else if (err.code === 'auth/invalid-credential') errorMsg = 'Correo o contraseña incorrectos.';
       else if (err.code === 'auth/operation-not-allowed') errorMsg = 'El inicio con correo/contraseña está deshabilitado en Firebase.';
+      else if (err.code === 'auth/account-disabled') errorMsg = err.message;
+      else if (err.code === 'auth/user-not-found') errorMsg = 'No existe ninguna cuenta con ese correo.';
+      else if (err.code === 'auth/wrong-password') errorMsg = 'Correo o contraseña incorrectos.';
+      else if (err.code === 'auth/too-many-requests') errorMsg = 'Demasiados intentos fallidos. Espera unos minutos e inténtalo de nuevo.';
+      else if (err.code === 'auth/network-request-failed') errorMsg = 'Sin conexión con el servidor. Revisa tu red.';
       else errorMsg = err.message; // Mostrar mensaje completo si es otra cosa (ej. Firestore permissions)
       
       setError(errorMsg);
     }
     
     setLoading(false);
+  };
+
+  const handleReset = async () => {
+    const cleanEmail = email.trim();
+    setError('');
+    setAviso('');
+
+    if (!cleanEmail) {
+      setError('Escribe tu correo arriba y vuelve a pulsar el enlace.');
+      return;
+    }
+
+    setEnviandoReset(true);
+    try {
+      await resetPassword(cleanEmail);
+      // Firebase no confirma si la cuenta existe, para no filtrar qué correos
+      // están registrados. El mensaje es el mismo en ambos casos.
+      setAviso(`Si ${cleanEmail} tiene una cuenta, te llega un enlace para crear una contraseña nueva. Revisa también el spam.`);
+    } catch (err) {
+      console.error('Error enviando el restablecimiento:', err);
+      if (err.code === 'auth/invalid-email') setError('El correo no tiene un formato válido.');
+      else if (err.code === 'auth/too-many-requests') setError('Demasiados intentos. Espera unos minutos.');
+      else setError('No se pudo enviar el correo: ' + err.message);
+    } finally {
+      setEnviandoReset(false);
+    }
   };
 
   return (
@@ -54,6 +96,7 @@ export default function Login() {
         </p>
         
         {error && <div className="error-message">{error}</div>}
+        {aviso && <div className="notice-message">{aviso}</div>}
 
         <form className="login-form" onSubmit={handleSubmit}>
           <div className="input-group">
@@ -86,8 +129,16 @@ export default function Login() {
           </button>
         </form>
 
+        {!isRegister && (
+          <div className="forgot-row">
+            <button type="button" className="text-btn" onClick={handleReset} disabled={enviandoReset}>
+              {enviandoReset ? 'Enviando…' : '¿Olvidaste tu contraseña?'}
+            </button>
+          </div>
+        )}
+
         <div className="toggle-mode">
-          <button type="button" className="text-btn" onClick={() => setIsRegister(!isRegister)}>
+          <button type="button" className="text-btn" onClick={() => { setIsRegister(!isRegister); setError(''); setAviso(''); }}>
             {isRegister ? '¿Ya tienes cuenta? Inicia sesión' : '¿Primer uso? Crea el Administrador'}
           </button>
         </div>
@@ -210,6 +261,27 @@ export default function Login() {
 
         .btn-primary:disabled {
           opacity: 0.7;
+          cursor: not-allowed;
+        }
+
+        .notice-message {
+          background-color: rgba(163, 230, 53, 0.1);
+          color: var(--primary);
+          padding: 0.75rem;
+          border-radius: var(--radius);
+          margin-bottom: 1.5rem;
+          font-size: 0.875rem;
+          border: 1px solid rgba(163, 230, 53, 0.25);
+          line-height: 1.5;
+        }
+
+        .forgot-row {
+          margin-top: 1rem;
+          text-align: center;
+        }
+
+        .forgot-row .text-btn:disabled {
+          opacity: 0.6;
           cursor: not-allowed;
         }
 

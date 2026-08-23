@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, onSnapshot, addDoc, doc, getDoc } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, addDoc, doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
-import { Bell, X, Send, Plus } from 'lucide-react';
+import { X, Send, Plus } from 'lucide-react';
+import { formatDate, formatTimeOfDay } from '../lib/dates';
+import { ROLES } from '../lib/roles';
 
 export default function NotificationPanel({ onClose }) {
   const { currentUser, userRole } = useAuth();
@@ -18,31 +20,35 @@ export default function NotificationPanel({ onClose }) {
 
     // Fetch trainer ID if user is student
     const fetchTrainerId = async () => {
-      if (userRole === 'user' || userRole === 'student') {
-        const studentSnap = await getDoc(doc(db, "users", currentUser.uid));
-        if (studentSnap.exists()) {
-          setTrainerId(studentSnap.data().trainerId);
+      if (userRole === ROLES.STUDENT) {
+        try {
+          const studentSnap = await getDoc(doc(db, "users", currentUser.uid));
+          if (studentSnap.exists()) {
+            setTrainerId(studentSnap.data().trainerId || null);
+          }
+        } catch (err) {
+          console.error("Error obteniendo el entrenador:", err);
         }
       }
     };
     fetchTrainerId();
 
-    const q = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'));
+    const q = query(collection(db, 'notifications'), orderBy('createdAt', 'desc'), limit(100));
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const notifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
       // Local filtering based on role
       const filtered = notifs.filter(n => {
-        if (userRole === 'admin') return true; // Admin sees all
+        if (userRole === ROLES.ADMIN) return true; // Admin sees all
         
         if (n.targetRole === 'all') return true;
         
-        if (userRole === 'trainer') {
+        if (userRole === ROLES.TRAINER) {
           return n.targetRole === 'trainer' || n.targetUserId === currentUser.uid;
         }
         
-        if (userRole === 'user' || userRole === 'student') {
+        if (userRole === ROLES.STUDENT) {
           // If targeted specifically to this student
           if (n.targetUserId === currentUser.uid) return true;
           // If targeted to all students
@@ -67,11 +73,17 @@ export default function NotificationPanel({ onClose }) {
     let finalTargetRole = target;
     let targetUserId = null;
 
-    if (userRole === 'trainer') {
-      finalTargetRole = 'user'; // Trainer broadcasts to their users
-    } else if (userRole === 'user' || userRole === 'student') {
-      finalTargetRole = 'trainer';
+    if (userRole === ROLES.TRAINER) {
+      finalTargetRole = ROLES.STUDENT; // Trainer broadcasts to their students
+    } else if (userRole === ROLES.STUDENT) {
+      finalTargetRole = ROLES.TRAINER;
       targetUserId = trainerId; // Student sends to their trainer
+      // Sin entrenador asignado, el mensaje se guardaba con targetUserId null
+      // y no lo recibía nadie, pero la UI decía "enviado".
+      if (!targetUserId) {
+        alert('Todavía no tienes un entrenador asignado, no hay a quién enviar el aviso.');
+        return;
+      }
     }
 
     try {
@@ -90,6 +102,7 @@ export default function NotificationPanel({ onClose }) {
       setMessage('');
     } catch (err) {
       console.error("Error sending notification:", err);
+      alert('No se pudo enviar la notificación: ' + err.message);
     }
   };
 
@@ -107,19 +120,19 @@ export default function NotificationPanel({ onClose }) {
           <form className="compose-form" onSubmit={handleSend}>
             <h4>Nueva Notificación</h4>
             
-            {userRole === 'admin' && (
+            {userRole === ROLES.ADMIN && (
               <select value={target} onChange={(e) => setTarget(e.target.value)} className="target-select">
                 <option value="all">Todos los usuarios</option>
                 <option value="trainer">Todos los Entrenadores</option>
-                <option value="user">Todos los Alumnos</option>
+                <option value="student">Todos los Alumnos</option>
               </select>
             )}
             
-            {(userRole === 'trainer') && (
+            {userRole === ROLES.TRAINER && (
               <p className="target-info">Destino: Todos tus alumnos</p>
             )}
             
-            {(userRole === 'user' || userRole === 'student') && (
+            {userRole === ROLES.STUDENT && (
               <p className="target-info">Destino: Tu entrenador</p>
             )}
 
@@ -155,9 +168,9 @@ export default function NotificationPanel({ onClose }) {
                     <div className="notif-title">{notif.title}</div>
                     <div className="notif-msg">{notif.message}</div>
                     <div className="notif-footer">
-                      <span className="notif-sender">De: {notif.senderName}</span>
+                      <span className="notif-sender">De: {notif.senderName || 'Sistema'}</span>
                       <span className="notif-date">
-                        {new Date(notif.createdAt).toLocaleDateString()} {new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {formatDate(notif.createdAt, '')} {formatTimeOfDay(notif.createdAt)}
                       </span>
                     </div>
                   </div>

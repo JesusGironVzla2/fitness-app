@@ -1,19 +1,34 @@
 import React from 'react';
+import { workoutDate } from '../lib/dates';
+
+// Sinónimos por zona del muñeco. Antes se buscaba la subcadena literal
+// ('core', 'brazo', 'pierna'...) dentro del nombre del grupo muscular, así que
+// "Abdomen" nunca coloreaba el core, "Bíceps"/"Tríceps" nunca coloreaban los
+// brazos y "Cuádriceps"/"Glúteos" nunca coloreaban las piernas.
+const MUSCLE_ALIASES = {
+  pecho: ['pecho', 'pectoral', 'chest'],
+  core: ['core', 'abdomen', 'abdominal', 'abs', 'oblicuo', 'lumbar'],
+  brazo: ['brazo', 'bicep', 'bícep', 'tricep', 'trícep', 'antebrazo', 'hombro', 'deltoide'],
+  pierna: ['pierna', 'cuadricep', 'cuádricep', 'femoral', 'isquio', 'glúteo', 'gluteo', 'gemelo', 'pantorrilla'],
+  espalda: ['espalda', 'dorsal', 'trapecio', 'lat'],
+};
 
 export default function MuscleMap({ workouts, exercisesLib }) {
   const now = new Date();
-  const fatigueMap = {}; 
-  
+  const fatigueMap = {};
+
   if (workouts && workouts.length > 0) {
     workouts.forEach(w => {
       if (w.completed) {
-        const wDate = new Date(w.completedAt || w.date);
+        const wDate = workoutDate(w);
+        if (!wDate) return;
         const hoursDiff = (now - wDate) / (1000 * 60 * 60);
-        // Only track fatigue for workouts in the last 72 hours
-        if (hoursDiff <= 72 && w.exercises) {
+        // Sólo cuenta lo entrenado en las últimas 72h. `hoursDiff >= 0` descarta
+        // rutinas con fecha futura, que antes se pintaban como "fatigado".
+        if (hoursDiff >= 0 && hoursDiff <= 72 && Array.isArray(w.exercises)) {
           w.exercises.forEach(ex => {
             const muscle = exercisesLib[ex.exerciseId] || 'Otros';
-            if (!fatigueMap[muscle] || hoursDiff < fatigueMap[muscle]) {
+            if (fatigueMap[muscle] === undefined || hoursDiff < fatigueMap[muscle]) {
               fatigueMap[muscle] = hoursDiff;
             }
           });
@@ -22,18 +37,26 @@ export default function MuscleMap({ workouts, exercisesLib }) {
     });
   }
 
-  const getColor = (muscleStr) => {
-    // Find if any trained muscle string includes the target
-    const m = Object.keys(fatigueMap).find(k => k.toLowerCase().includes(muscleStr.toLowerCase()));
-    if (!m) return '#1f2937'; // Default dark gray (rested completely / no activity)
-    const h = fatigueMap[m];
-    if (h <= 24) return '#ef4444'; // Red (Fatigued)
-    if (h <= 48) return '#eab308'; // Yellow (Recovering)
-    return '#10b981'; // Green (Rested)
+  const getColor = (zone) => {
+    const aliases = MUSCLE_ALIASES[zone] || [zone];
+    // Una zona puede haberse trabajado con varios grupos musculares: nos
+    // quedamos con el más reciente, no con el primero que coincida.
+    let hours = null;
+    Object.keys(fatigueMap).forEach(key => {
+      const name = key.toLowerCase();
+      if (aliases.some(alias => name.includes(alias))) {
+        if (hours === null || fatigueMap[key] < hours) hours = fatigueMap[key];
+      }
+    });
+
+    if (hours === null) return '#1f2937'; // Sin actividad reciente
+    if (hours <= 24) return '#ef4444';    // Fatigado
+    if (hours <= 48) return '#eab308';    // Recuperándose
+    return '#10b981';                     // Fresco
   };
 
-  const getGlow = (muscleStr) => {
-    const color = getColor(muscleStr);
+  const getGlow = (zone) => {
+    const color = getColor(zone);
     if (color === '#1f2937') return 'none';
     return `drop-shadow(0 0 5px ${color}80)`;
   };
@@ -45,8 +68,11 @@ export default function MuscleMap({ workouts, exercisesLib }) {
         {/* Head */}
         <circle cx="50" cy="20" r="14" fill="#1f2937" stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
         
+        {/* Espalda / trapecios (franja superior del torso) */}
+        <path d="M 32 40 L 68 40 L 69 48 L 31 48 Z" fill={getColor('espalda')} stroke="rgba(255,255,255,0.15)" strokeWidth="1.5" style={{ transition: 'fill 0.5s', filter: getGlow('espalda') }} />
+
         {/* Torso/Chest (Pecho) */}
-        <path d="M 32 40 L 68 40 L 72 70 L 28 70 Z" fill={getColor('pecho')} stroke="rgba(255,255,255,0.15)" strokeWidth="1.5" style={{ transition: 'fill 0.5s', filter: getGlow('pecho') }} />
+        <path d="M 31 48 L 69 48 L 72 70 L 28 70 Z" fill={getColor('pecho')} stroke="rgba(255,255,255,0.15)" strokeWidth="1.5" style={{ transition: 'fill 0.5s', filter: getGlow('pecho') }} />
         
         {/* Core/Abs (Core) */}
         <path d="M 28 70 L 72 70 L 65 105 L 35 105 Z" fill={getColor('core')} stroke="rgba(255,255,255,0.15)" strokeWidth="1.5" style={{ transition: 'fill 0.5s', filter: getGlow('core') }} />

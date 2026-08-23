@@ -4,10 +4,14 @@ import { Award } from 'lucide-react';
 export default function Trophies({ rmLogs }) {
   // Extract top 3 PRs
   const bestPRs = {};
-  rmLogs.forEach(log => {
+  (rmLogs || []).forEach(log => {
     const val = parseFloat(log.value);
-    if (!bestPRs[log.exerciseOrBodyPart] || val > bestPRs[log.exerciseOrBodyPart]) {
-      bestPRs[log.exerciseOrBodyPart] = val;
+    const key = log.exerciseOrBodyPart;
+    // Un registro sin nombre o con valor no numérico mostraba una tarjeta
+    // "NaN kg" con el título vacío.
+    if (!key || !Number.isFinite(val)) return;
+    if (bestPRs[key] === undefined || val > bestPRs[key]) {
+      bestPRs[key] = val;
     }
   });
 
@@ -67,7 +71,7 @@ export default function Trophies({ rmLogs }) {
             <Award size={36} color={s.color} style={{ filter: `drop-shadow(0 0 8px ${s.color}80)` }} />
             
             <div style={{ textAlign: 'center', zIndex: 1 }}>
-              <h4 style={{ margin: '0 0 0.25rem 0', fontSize: '1.4rem', color: 'white', fontWeight: '800', letterSpacing: '-0.5px' }}>{pr[1]} <span style={{fontSize:'0.9rem', color: 'var(--muted-foreground)'}}>kg</span></h4>
+              <h4 style={{ margin: '0 0 0.25rem 0', fontSize: '1.4rem', color: 'white', fontWeight: '800', letterSpacing: '-0.5px' }}>{Math.round(pr[1] * 10) / 10} <span style={{fontSize:'0.9rem', color: 'var(--muted-foreground)'}}>kg</span></h4>
               <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--muted-foreground)', lineHeight: '1.2', fontWeight: '500' }}>{pr[0]}</p>
             </div>
           </div>

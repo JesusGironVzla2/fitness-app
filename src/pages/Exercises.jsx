@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, getDocs, addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
-import { Dumbbell, Plus, TrendingUp, Sparkles, Pencil, Trash2, Settings } from 'lucide-react';
+import { Dumbbell, Plus, TrendingUp, Sparkles, Pencil, Trash2, Settings, X } from 'lucide-react';
 import '../styles/global.css';
 
 export default function Exercises() {
@@ -133,14 +133,20 @@ export default function Exercises() {
     ];
 
     setLoading(true);
-    for (const ex of defaultExercises) {
-      const exists = exercises.some(e => e.name.toLowerCase() === ex.name.toLowerCase());
-      if (!exists) {
-        await addDoc(collection(db, "exercises"), { ...ex, createdAt: new Date().toISOString() });
+    try {
+      for (const ex of defaultExercises) {
+        const exists = exercises.some(e => (e.name || '').toLowerCase() === ex.name.toLowerCase());
+        if (!exists) {
+          await addDoc(collection(db, "exercises"), { ...ex, createdAt: new Date().toISOString() });
+        }
       }
+      alert("¡Ejercicios de prueba cargados con éxito!");
+    } catch (err) {
+      console.error("Error cargando ejercicios de prueba:", err);
+      alert("No se pudieron cargar los ejercicios de prueba: " + err.message);
+    } finally {
+      await fetchExercises();
     }
-    await fetchExercises();
-    alert("¡Ejercicios de prueba cargados con éxito!");
   };
 
   const dynamicMuscles = Array.from(new Set(exercises.map(ex => ex.targetMuscle)))
@@ -149,8 +155,15 @@ export default function Exercises() {
   
   const handleSaveMuscle = async (e) => {
     e.preventDefault();
-    if (!newMuscleName.trim()) return;
-    const updatedList = [...savedMuscles, newMuscleName.trim()];
+    const name = newMuscleName.trim();
+    if (!name) return;
+    // Nada impedía añadir el mismo grupo dos veces, y el <select> repetía la
+    // opción con la misma `key`, lo que además avisaba en consola.
+    if (savedMuscles.some(m => m.toLowerCase() === name.toLowerCase())) {
+      alert(`"${name}" ya está en la lista.`);
+      return;
+    }
+    const updatedList = [...savedMuscles, name];
     try {
       await setDoc(doc(db, "settings", "muscles"), { list: updatedList });
       setSavedMuscles(updatedList);
@@ -161,6 +174,16 @@ export default function Exercises() {
   };
 
   const handleDeleteMuscle = async (m) => {
+    // Se borraba al primer clic, sin confirmación y sin avisar de que los
+    // ejercicios ya asignados a ese grupo se quedan huérfanos.
+    const inUse = exercises.filter(ex => ex.targetMuscle === m).length;
+    const warning = inUse > 0
+      ? `
+
+Hay ${inUse} ejercicio(s) asignados a "${m}". Seguirán existiendo, pero dejarán de aparecer en este filtro.`
+      : '';
+    if (!window.confirm(`¿Eliminar el grupo muscular "${m}"?${warning}`)) return;
+
     const updatedList = savedMuscles.filter(x => x !== m);
     try {
       await setDoc(doc(db, "settings", "muscles"), { list: updatedList });
@@ -172,7 +195,7 @@ export default function Exercises() {
 
   const filteredExercises = filterMuscle === 'Todos' 
     ? exercises 
-    : exercises.filter(ex => ex.targetMuscle.toLowerCase().includes(filterMuscle.toLowerCase()));
+    : exercises.filter(ex => (ex.targetMuscle || '').toLowerCase().includes(filterMuscle.toLowerCase()));
 
   return (
     <div className="exercises-page">
@@ -232,11 +255,15 @@ export default function Exercises() {
       <div className="exercises-grid">
         {loading ? (
           <p>Cargando ejercicios...</p>
-        ) : exercises.length === 0 ? (
+        ) : filteredExercises.length === 0 ? (
           <div className="empty-state glass" style={{ gridColumn: '1 / -1' }}>
             <Dumbbell size={48} color="var(--muted-foreground)" />
-            <h3>No hay ejercicios</h3>
-            <p>Agrega ejercicios a la biblioteca para empezar a crear rutinas.</p>
+            <h3>{exercises.length === 0 ? 'No hay ejercicios' : `Sin ejercicios de ${filterMuscle}`}</h3>
+            <p>
+              {exercises.length === 0
+                ? 'Agrega ejercicios a la biblioteca para empezar a crear rutinas.'
+                : 'Prueba con otro grupo muscular o crea un ejercicio nuevo.'}
+            </p>
           </div>
         ) : (
           filteredExercises.map(exercise => (

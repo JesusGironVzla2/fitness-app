@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { 
@@ -20,21 +20,71 @@ import {
   Sparkles,
   Flame,
   Heart,
-  Scale
+  Scale,
+  Flame as FlameIcon,
+  CloudOff
 } from 'lucide-react';
 import '../styles/global.css';
 import NotificationPanel from './NotificationPanel';
 import AICoachChat from './AICoachChat';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { dayKey, workoutDate } from '../lib/dates';
+import { roleLabel } from '../lib/roles';
 
 export default function Layout() {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [streak, setStreak] = useState(0);
+  const [sinConexion, setSinConexion] = useState(() => typeof navigator !== 'undefined' && navigator.onLine === false);
   const navigate = useNavigate();
   const { userRole, logout, isImpersonating, stopImpersonating, currentUser } = useAuth();
+
+  // Firestore guarda en local y sincroniza solo al volver la señal, pero sin
+  // ningún aviso el usuario no sabe si sus datos se han guardado o no.
+  React.useEffect(() => {
+    const online = () => setSinConexion(false);
+    const offline = () => setSinConexion(true);
+    window.addEventListener('online', online);
+    window.addEventListener('offline', offline);
+    return () => {
+      window.removeEventListener('online', online);
+      window.removeEventListener('offline', offline);
+    };
+  }, []);
+
+  const notificationsRef = useRef(null);
+  const profileMenuRef = useRef(null);
+
+  // Los menús de notificaciones y perfil se quedaban abiertos indefinidamente:
+  // no había forma de cerrarlos salvo volver a pulsar su propio botón, y el de
+  // notificaciones tapaba el contenido al navegar a otra página.
+  React.useEffect(() => {
+    if (!showNotifications && !showProfileMenu) return;
+
+    const handlePointerDown = (event) => {
+      if (notificationsRef.current && !notificationsRef.current.contains(event.target)) {
+        setShowNotifications(false);
+      }
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
+        setShowProfileMenu(false);
+      }
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setShowNotifications(false);
+        setShowProfileMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showNotifications, showProfileMenu]);
 
   const handleLogout = async () => {
     try {
@@ -51,17 +101,25 @@ export default function Layout() {
         try {
           const q = query(collection(db, "workouts"), where("studentId", "==", currentUser.uid), where("completed", "==", true));
           const snap = await getDocs(q);
-          const dates = snap.docs.map(d => new Date(d.data().completedAt || d.data().date).toISOString().split('T')[0]);
-          const uniqueDates = [...new Set(dates)].sort((a, b) => new Date(b) - new Date(a));
+
+          // `new Date(undefined).toISOString()` lanzaba RangeError con cualquier
+          // rutina sin fecha, dejando la racha en 0 para siempre. Además
+          // toISOString() devuelve el día en UTC y se comparaba contra días
+          // locales, así que la racha se rompía sola según la hora del día.
+          const dates = snap.docs
+            .map(d => workoutDate(d.data()))
+            .filter(Boolean)
+            .map(dayKey);
+          const uniqueDates = [...new Set(dates)].sort().reverse();
           
           let currentStreak = 0;
           let checkDate = new Date();
           
           if (uniqueDates.length > 0) {
-            const todayStr = checkDate.toISOString().split('T')[0];
+            const todayStr = dayKey(checkDate);
             const yesterday = new Date();
             yesterday.setDate(yesterday.getDate() - 1);
-            const yesterdayStr = yesterday.toISOString().split('T')[0];
+            const yesterdayStr = dayKey(yesterday);
             
             let dateIdx = 0;
             if (uniqueDates[0] === todayStr) {
@@ -78,7 +136,7 @@ export default function Layout() {
             }
             
             while (dateIdx < uniqueDates.length) {
-              const expectedStr = checkDate.toISOString().split('T')[0];
+              const expectedStr = dayKey(checkDate);
               if (uniqueDates[dateIdx] === expectedStr) {
                 currentStreak++;
                 checkDate.setDate(checkDate.getDate() - 1);
@@ -107,6 +165,7 @@ export default function Layout() {
       { name: 'Mis Rutinas', path: '/mis-rutinas', icon: ClipboardList },
       { name: 'Mi Progreso', path: '/progreso', icon: Activity },
       { name: 'Control Corporal', path: '/control-corporal', icon: Scale },
+      { name: 'Fuerza e Hipertrofia', path: '/fuerza-hipertrofia', icon: FlameIcon },
       { name: 'Suplementación', path: '/suplementacion', icon: Pill },
       { name: 'Mensajes', path: '/mensajes', icon: MessageSquare },
       { name: 'Consejos', path: '/consejos', icon: Sparkles },
@@ -121,17 +180,19 @@ export default function Layout() {
       { name: 'Mis Rutinas', path: '/mis-rutinas', icon: ClipboardList },
       { name: 'Mi Progreso', path: '/progreso', icon: Activity },
       { name: 'Control Corporal', path: '/control-corporal', icon: Scale },
+      { name: 'Fuerza e Hipertrofia', path: '/fuerza-hipertrofia', icon: FlameIcon },
       { name: 'Suplementación', path: '/suplementacion', icon: Pill },
       { name: 'Mensajes', path: '/mensajes', icon: MessageSquare },
       { name: 'Consejos', path: '/consejos', icon: Sparkles },
       { name: 'Soporte', path: '/soporte', icon: LifeBuoy },
       { name: 'Configuración', path: '/configuracion', icon: Settings },
     ],
-    user: [
+    student: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Mis Rutinas', path: '/mis-rutinas', icon: ClipboardList },
       { name: 'Mi Progreso', path: '/progreso', icon: Activity },
       { name: 'Control Corporal', path: '/control-corporal', icon: Scale },
+      { name: 'Fuerza e Hipertrofia', path: '/fuerza-hipertrofia', icon: FlameIcon },
       { name: 'Mensajes', path: '/mensajes', icon: MessageSquare },
       { name: 'Consejos', path: '/consejos', icon: Sparkles },
       { name: 'Wellness', path: '/wellness', icon: Heart },
@@ -140,7 +201,7 @@ export default function Layout() {
     ]
   };
 
-  const currentNavItems = navItems[userRole] || navItems.user;
+  const currentNavItems = navItems[userRole] || navItems.student;
 
   return (
     <div className="layout-container">
@@ -183,15 +244,22 @@ export default function Layout() {
 
       {/* Main Content */}
       <main className="main-content">
+        {sinConexion && (
+          <div className="offline-banner">
+            <CloudOff size={16} />
+            Sin conexión. Puedes seguir entrenando: lo que registres se guardará y se sincronizará al volver la señal.
+          </div>
+        )}
+
         <header className="topbar glass">
           <div className="topbar-left">
             <button className="mobile-toggle" onClick={() => setSidebarOpen(true)}>
               <Menu size={24} />
             </button>
-            <h3>Panel de {userRole === 'admin' ? 'Administrador' : userRole === 'trainer' ? 'Entrenador' : 'Alumno'}</h3>
+            <h3>Panel de {roleLabel(userRole)}</h3>
             {isImpersonating && (
               <span className="badge" style={{ marginLeft: '1rem', background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444' }}>
-                Modo: {currentUser.displayName || currentUser.email}
+                Modo: {currentUser?.displayName || currentUser?.email || 'Vista de usuario'}
               </span>
             )}
           </div>
@@ -209,8 +277,8 @@ export default function Layout() {
               </button>
             )}
 
-            <div style={{ position: 'relative' }}>
-              <button className="icon-btn" onClick={() => setShowNotifications(!showNotifications)}>
+            <div style={{ position: 'relative' }} ref={notificationsRef}>
+              <button className="icon-btn" aria-label="Notificaciones" onClick={() => { setShowNotifications(!showNotifications); setShowProfileMenu(false); }}>
                 <Bell size={20} />
               </button>
               {showNotifications && (
@@ -229,10 +297,10 @@ export default function Layout() {
                 Salir de Vista
               </button>
             )}
-            <div style={{ position: 'relative' }}>
-              <div className="user-profile" onClick={() => setShowProfileMenu(!showProfileMenu)}>
-                <div className="avatar">{userRole ? userRole.charAt(0).toUpperCase() : 'U'}</div>
-                <span className="user-name">{userRole === 'admin' ? 'Admin' : userRole === 'trainer' ? 'Trainer' : 'Alumno'}</span>
+            <div style={{ position: 'relative' }} ref={profileMenuRef}>
+              <div className="user-profile" onClick={() => { setShowProfileMenu(!showProfileMenu); setShowNotifications(false); }}>
+                <div className="avatar">{roleLabel(userRole).charAt(0)}</div>
+                <span className="user-name">{roleLabel(userRole)}</span>
               </div>
               
               {showProfileMenu && (
@@ -269,8 +337,13 @@ export default function Layout() {
           <Outlet />
         </div>
         
-        {/* Global AI Coach Assistant */}
-        <AICoachChat />
+        {/* Asistente IA. Va envuelto porque su botón flotante es `position:
+            fixed; left: 2rem`, lo que en escritorio lo pone encima del menú
+            lateral y en móvil, con el menú abierto, justo sobre "Cerrar Sesión".
+            Se corrige desde aquí para no tocar el componente. */}
+        <div className={`ai-coach-slot ${isSidebarOpen ? 'oculto' : ''}`}>
+          <AICoachChat />
+        </div>
       </main>
 
       <style>{`
@@ -300,6 +373,10 @@ export default function Layout() {
         .sidebar-header h2 {
           font-size: 1.5rem;
           margin: 0;
+        }
+
+        .sidebar-header .logo-icon {
+          flex-shrink: 0;
         }
 
         .sidebar-nav {
@@ -390,6 +467,11 @@ export default function Layout() {
           padding: 0.5rem;
           border-radius: 50%;
           transition: all 0.2s;
+          min-width: 44px;
+          min-height: 44px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
         }
 
         .icon-btn:hover {
@@ -436,6 +518,22 @@ export default function Layout() {
           background: transparent;
           border: none;
           color: var(--foreground);
+          /* El icono medía 24x27: demasiado pequeño para el dedo, y son los
+             dos controles principales de navegación en móvil. */
+          min-width: 44px;
+          min-height: 44px;
+          align-items: center;
+          justify-content: center;
+          border-radius: 50%;
+          padding: 0;
+        }
+
+        .mobile-close {
+          margin-left: auto;
+        }
+
+        .mobile-toggle:active, .mobile-close:active {
+          background: rgba(255, 255, 255, 0.08);
         }
 
         @media (max-width: 768px) {
@@ -460,11 +558,36 @@ export default function Layout() {
           }
 
           .mobile-toggle, .mobile-close {
-            display: block;
+            display: flex;
           }
 
           .topbar {
-            padding: 0 1rem;
+            padding: 0 0.75rem;
+            gap: 0.5rem;
+          }
+
+          .topbar-left, .topbar-right {
+            gap: 0.5rem;
+            min-width: 0;
+          }
+
+          /* "Panel de Administrador" se partía en dos líneas y se salía de la
+             barra de 70px. Se recorta con puntos suspensivos en una sola línea. */
+          .topbar-left h3 {
+            font-size: 0.95rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            min-width: 0;
+          }
+
+          /* El nombre del rol repetía lo que ya dice el título de la barra. */
+          .user-name {
+            display: none;
+          }
+
+          .user-profile {
+            padding: 0.25rem;
           }
 
           .page-content {

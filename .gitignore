@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+scripts/smoke/out/
+scripts/responsive/out/
+scripts/responsive/capturas/
