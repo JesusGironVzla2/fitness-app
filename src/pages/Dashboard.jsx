@@ -8,6 +8,7 @@ import { ResponsiveContainer, AreaChart, Area, LineChart, Line, XAxis, YAxis, Ca
 import { fetchProgressLogs, buildMeasureLog } from '../lib/progress';
 import { toTime, todayKey, dayKey, formatShort, toNumber, workoutDate } from '../lib/dates';
 import { ROLES } from '../lib/roles';
+import { getOpenRouterKey, openRouterHeaders } from '../lib/openrouter';
 import ProgressRings from '../components/ProgressRings';
 import ActivityCalendar from '../components/ActivityCalendar';
 import Trophies from '../components/Trophies';
@@ -225,7 +226,7 @@ export default function Dashboard() {
 
   const generateInsights = async (rms, metrics) => {
     const weights = metrics.filter(m => m.metric === 'Peso Corporal');
-    const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY || import.meta.env.VITE_GEMINI_API_KEY;
+    const apiKey = getOpenRouterKey();
 
     if (apiKey && apiKey.length > 10) {
       try {
@@ -240,12 +241,7 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
 
         const responseAPI = await fetch("https://openrouter.ai/api/v1/chat/completions", {
           method: "POST",
-          headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "HTTP-Referer": "https://coachnode.vercel.app",
-            "X-Title": "CoachNode",
-            "Content-Type": "application/json"
-          },
+          headers: openRouterHeaders(apiKey),
           body: JSON.stringify({
             model: "openrouter/free",
             response_format: { type: "json_object" },

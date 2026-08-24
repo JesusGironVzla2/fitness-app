@@ -7,6 +7,7 @@ import { getDoc } from 'firebase/firestore';
 import html2canvas from 'html2canvas';
 import { toDate, toTime, todayKey, formatDate as formatDateSafe } from '../lib/dates';
 import { construirHistorialPorEjercicio, hace, resumirSesion } from '../lib/history';
+import { getOpenRouterKey, openRouterHeaders } from '../lib/openrouter';
 import '../styles/global.css';
 
 // Nombres de mes usados por la cabecera del calendario.
@@ -282,7 +283,7 @@ export default function StudentWorkouts() {
         setExercises(currentExercises);
       }
 
-      const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY || import.meta.env.VITE_GEMINI_API_KEY;
+      const apiKey = getOpenRouterKey();
       if (!apiKey) throw new Error("Falta API KEY de OpenRouter");
 
       const exercisesList = currentExercises.map(ex => `${ex.id}: ${ex.name} (${ex.targetMuscle})`).join('\n');
@@ -308,12 +309,7 @@ Formato requerido:
 
       const responseAPI = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "HTTP-Referer": "https://coachnode.vercel.app",
-          "X-Title": "CoachNode",
-          "Content-Type": "application/json"
-        },
+        headers: openRouterHeaders(apiKey),
         body: JSON.stringify({
           model: "openrouter/free",
           response_format: { type: "json_object" },

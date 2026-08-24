@@ -25,3 +25,6 @@ dist-ssr
 scripts/smoke/out/
 scripts/responsive/out/
 scripts/responsive/capturas/
+
+# Vercel
+.vercel

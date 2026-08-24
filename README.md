@@ -57,6 +57,7 @@ sensibles ni facturación abierta; usa claves restringidas por dominio.
 | Variable | Obligatoria | Para qué sirve |
 | --- | --- | --- |
 | `VITE_OPENROUTER_API_KEY` | Sí, para la IA | Clave de OpenRouter, el único proveedor de IA del proyecto. |
+| `VITE_SITE_URL` | No | Origen a declarar en `HTTP-Referer`. Si falta se usa `window.location.origin`. |
 
 **Reglas fijas de la IA** (ver `.agents/AGENTS.md`):
 
@@ -67,8 +68,11 @@ sensibles ni facturación abierta; usa claves restringidas por dominio.
   se rompa si uno sale del tier gratuito.
 
 Las tres llamadas viven en `AICoachChat.jsx`, `Dashboard.jsx` y
-`StudentWorkouts.jsx`. Si alguna vez se centralizan, deben seguir mandando el
-mismo modelo y la misma cabecera `HTTP-Referer: https://coachnode.vercel.app`.
+`StudentWorkouts.jsx`, y comparten cabeceras a través de
+`src/lib/openrouter.js`. El `HTTP-Referer` ya no lleva un dominio escrito a
+mano: sale de `VITE_SITE_URL` y, si no está definida, del origen real del
+navegador. Cualquier llamada nueva debe usar `openRouterHeaders()` y seguir
+mandando el mismo modelo.
 
 ## Roles
 

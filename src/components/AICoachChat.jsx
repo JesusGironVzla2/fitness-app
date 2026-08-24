@@ -3,6 +3,7 @@ import { Bot, X, Send, Sparkles } from 'lucide-react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
+import { getOpenRouterKey, openRouterHeaders } from '../lib/openrouter';
 
 export default function AICoachChat() {
   const [isOpen, setIsOpen] = useState(false);
@@ -58,7 +59,7 @@ export default function AICoachChat() {
     setIsTyping(true);
 
     try {
-      const apiKey = import.meta.env.VITE_OPENROUTER_API_KEY || import.meta.env.VITE_GEMINI_API_KEY;
+      const apiKey = getOpenRouterKey();
       if (!apiKey) throw new Error("Falta API KEY de OpenRouter");
 
       const context = await fetchUserContext();
@@ -76,12 +77,7 @@ ${context}`;
 
       const responseAPI = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "HTTP-Referer": "https://coachnode.vercel.app",
-          "X-Title": "CoachNode",
-          "Content-Type": "application/json"
-        },
+        headers: openRouterHeaders(apiKey),
         body: JSON.stringify({
           model: "openrouter/free",
           messages: apiMessages
