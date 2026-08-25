@@ -9,7 +9,7 @@ import { fetchProgressLogs, buildMeasureLog } from '../lib/progress';
 import { toTime, todayKey, dayKey, formatShort, toNumber, workoutDate } from '../lib/dates';
 import { ROLES } from '../lib/roles';
 import { getOpenRouterKey, openRouterHeaders } from '../lib/openrouter';
-import { resumirPlataforma } from '../lib/platformStats';
+import { resumirPlataforma, resumirEntrenador } from '../lib/platformStats';
 import ProgressRings from '../components/ProgressRings';
 import ActivityCalendar from '../components/ActivityCalendar';
 import Trophies from '../components/Trophies';
@@ -17,8 +17,6 @@ import MuscleMap from '../components/MuscleMap';
 export default function Dashboard() {
   const navigate = useNavigate();
   const { userRole, currentUser } = useAuth();
-  const [studentCount, setStudentCount] = useState(0);
-  
   // Data for charts
   const [rmLogs, setRmLogs] = useState([]);
   const [metricLogs, setMetricLogs] = useState([]);
@@ -39,6 +37,7 @@ export default function Dashboard() {
   // null mientras se cargan: las tarjetas enseñan "—" en vez de un 0 que
   // parecería un dato real («0 alumnos» y «cargando» no son lo mismo).
   const [adminMetrics, setAdminMetrics] = useState(null);
+  const [trainerMetrics, setTrainerMetrics] = useState(null);
 
   // UI state
   const [selectedExercise, setSelectedExercise] = useState('');
@@ -90,11 +89,20 @@ export default function Dashboard() {
     if (userRole === ROLES.TRAINER && currentUser) {
       const fetchStats = async () => {
         try {
-          const q = query(collection(db, "users"), where("role", "==", "student"), where("trainerId", "==", currentUser.uid));
-          const snap = await getDocs(q);
-          setStudentCount(snap.size);
+          // Sin el filtro `role == 'student'` en la consulta: se filtra en
+          // memoria con normalizeRole, porque los alumnos con la etiqueta
+          // antigua 'user' no encajaban y quedaban sin contar.
+          const [alumnosSnap, rutinasSnap] = await Promise.all([
+            getDocs(query(collection(db, "users"), where("trainerId", "==", currentUser.uid))),
+            getDocs(query(collection(db, "workouts"), where("trainerId", "==", currentUser.uid))),
+          ]);
+          setTrainerMetrics(resumirEntrenador(
+            alumnosSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+            rutinasSnap.docs.map((d) => d.data()),
+          ));
         } catch (error) {
-          console.error(error);
+          console.error('Error cargando las estadísticas del entrenador', error);
+          setTrainerMetrics({ error: true });
         }
       };
       fetchStats();
@@ -620,11 +628,22 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
     },
   ];
 
+  const retencion = trainerMetrics?.retencion;
   const trainerStats = [
-    { title: 'Mis Alumnos', value: studentCount.toString(), icon: Users, color: 'var(--primary)' },
-    { title: 'Rutinas Asignadas', value: '24', icon: ClipboardList, color: '#3b82f6' },
-    { title: 'Sesiones Completadas', value: '156', icon: CheckCircle, color: '#10b981' },
-    { title: 'Retención', value: '92%', icon: TrendingUp, color: '#a855f7' },
+    { title: 'Mis Alumnos', value: cifra(trainerMetrics?.alumnos), icon: Users, color: 'var(--primary)' },
+    { title: 'Rutinas Asignadas', value: cifra(trainerMetrics?.asignadas), icon: ClipboardList, color: '#3b82f6' },
+    { title: 'Sesiones Completadas', value: cifra(trainerMetrics?.completadas), icon: CheckCircle, color: '#10b981' },
+    {
+      title: 'Retención',
+      value: typeof retencion === 'number' ? `${retencion}%` : '—',
+      icon: TrendingUp,
+      color: '#a855f7',
+      hint: typeof retencion === 'number'
+        ? `${trainerMetrics.activos} de ${trainerMetrics.alumnos} han entrenado en 30 días`
+        : trainerMetrics && !trainerMetrics.error
+          ? 'Todavía no tienes alumnos asignados'
+          : null,
+    },
   ];
 
   const studentStatsArray = [

@@ -11,7 +11,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { construirHistorialPorEjercicio, hace, resumirSesion } from '../../src/lib/history.js';
-import { resumirPlataforma } from '../../src/lib/platformStats.js';
+import { resumirPlataforma, resumirEntrenador } from '../../src/lib/platformStats.js';
 
 let n = 0;
 const ok = (m) => { n++; console.log('  ✓', m); };
@@ -246,14 +246,58 @@ const leer = (p) => fs.readFileSync(p, 'utf8');
   );
   ok('Plataforma — tolera una lista de usuarios vacía o nula');
 
+  // ------------------------------------------- Panel de entrenador
+  const alumnosDelCoach = [
+    { id: 'a1', role: 'student', status: 'active' },
+    { id: 'a2', role: 'user', status: 'active' },        // etiqueta antigua
+    { id: 'a3', role: 'student', status: 'suspended' },  // suspendido: sigue contando
+    { id: 'a4', role: 'student', status: 'deleted' },    // baja: no cuenta
+  ];
+  const rutinasDelCoach = [
+    { studentId: 'a1', completed: true, date: haceDias(2) },
+    { studentId: 'a1', completed: true, date: haceDias(9) },  // el mismo alumno otra vez
+    { studentId: 'a2', completed: true, date: haceDias(80) }, // entrenó, pero hace mucho
+    { studentId: 'a3', completed: false, date: haceDias(1) }, // asignada sin completar
+    { studentId: 'a4', completed: true, date: haceDias(1) },  // el que está de baja
+    { studentId: 'a1', completed: true },                     // sin fecha
+  ];
+
+  const t = resumirEntrenador(alumnosDelCoach, rutinasDelCoach, AHORA);
+  assert.equal(t.alumnos, 3, 'cuenta el rol antiguo y el suspendido, no la baja');
+  assert.equal(t.asignadas, 6, 'asignadas son todas las rutinas, completadas o no');
+  // 5: las cinco marcadas como completadas, incluida la que no tiene fecha.
+  // Se completó igual; lo único que no sabemos es cuándo, y eso sólo afecta a
+  // la retención.
+  assert.equal(t.completadas, 5);
+  assert.equal(t.activos, 1, 'a1 cuenta una sola vez; a2 entrenó hace 80 días; a4 está de baja');
+  assert.equal(t.retencion, 33, '1 de 3 alumnos activos');
+  ok('Entrenador — retención por alumnos distintos, no por sesiones');
+
+  const sinAlumnos = resumirEntrenador([], [], AHORA);
+  assert.equal(sinAlumnos.retencion, null, 'sin alumnos no hay retención que medir');
+  assert.deepEqual(
+    resumirEntrenador(null, null, AHORA),
+    { alumnos: 0, asignadas: 0, completadas: 0, activos: 0, retencion: null },
+    'sin datos no debe reventar'
+  );
+  ok('Entrenador — sin alumnos la retención es null, no 0%');
+
   // La razón de existir de todo esto: que no vuelvan a ser constantes.
   const dash = leer('src/pages/Dashboard.jsx');
-  const bloque = dash.slice(dash.indexOf('const adminStats'), dash.indexOf('const trainerStats'));
+  const trozo = (desde, hasta) => dash.slice(dash.indexOf(desde), dash.indexOf(hasta));
+
+  const bloqueAdmin = trozo('const adminStats', 'const trainerStats');
   for (const inventado of ["'12'", "'148'", "'356'", "'+24%'"]) {
-    assert.ok(!bloque.includes(inventado), `las tarjetas de admin vuelven a tener ${inventado} a mano`);
+    assert.ok(!bloqueAdmin.includes(inventado), `las tarjetas de admin vuelven a tener ${inventado} a mano`);
   }
-  assert.ok(bloque.includes('adminMetrics'), 'las tarjetas de admin deben leer los datos cargados');
-  ok('Plataforma — las tarjetas de admin no llevan cifras escritas a mano');
+  assert.ok(bloqueAdmin.includes('adminMetrics'), 'las tarjetas de admin deben leer los datos cargados');
+
+  const bloqueCoach = trozo('const trainerStats', 'const studentStatsArray');
+  for (const inventado of ["'24'", "'156'", "'92%'"]) {
+    assert.ok(!bloqueCoach.includes(inventado), `las tarjetas de entrenador vuelven a tener ${inventado} a mano`);
+  }
+  assert.ok(bloqueCoach.includes('trainerMetrics'), 'las tarjetas de entrenador deben leer los datos cargados');
+  ok('Plataforma — ninguna tarjeta lleva cifras escritas a mano');
 }
 
 console.log(`\n  ${n} comprobaciones OK`);

@@ -142,9 +142,19 @@ probadas en el smoke:
   caché y falla sin conexión: se cae a contar documentos, que sí responde desde
   la caché.
 
-Las tarjetas del panel de **entrenador** («Rutinas Asignadas», «Sesiones
-Completadas», «Retención») siguen siendo constantes, pendientes del mismo
-tratamiento.
+**Estadísticas del panel de entrenador.** Mismo tratamiento y mismo archivo
+(`resumirEntrenador`). «Rutinas Asignadas» y «Sesiones Completadas» salen de
+`workouts` filtrado por `trainerId`; una rutina completada sin fecha cuenta
+igual, porque se completó: lo único que no se sabe es cuándo.
+
+**Retención** es qué parte de tus alumnos ha entrenado en los últimos 30 días,
+contando **alumnos distintos y no sesiones** —si no, uno muy constante taparía a
+cinco que lo han dejado— y sólo los que siguen en tu lista, para que dar de baja
+a un inactivo no dispare la cifra sola. Sin alumnos asignados dice «—», no 0 %.
+
+«Mis Alumnos» ya leía de Firestore, pero su consulta filtraba por
+`role == 'student'` en crudo y dejaba fuera a los alumnos con la etiqueta
+antigua `user`. Ahora filtra en memoria con `normalizeRole()`, como el resto.
 
 **Historial por ejercicio.** Al abrir una rutina, cada ejercicio muestra la
 última serie efectiva registrada («4x10 · 62,5 kg · RIR 2 · hace 3 días») con un
