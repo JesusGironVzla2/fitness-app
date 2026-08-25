@@ -2,13 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Users, Activity, TrendingUp, Dumbbell, ClipboardList, CheckCircle, Scale, Droplets, Sparkles, TrendingDown, Minus, Play, Plus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { collection, query, where, getDocs, addDoc, getDoc, doc } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, getDoc, doc, getCountFromServer } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { ResponsiveContainer, AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell, Legend } from 'recharts';
 import { fetchProgressLogs, buildMeasureLog } from '../lib/progress';
 import { toTime, todayKey, dayKey, formatShort, toNumber, workoutDate } from '../lib/dates';
 import { ROLES } from '../lib/roles';
 import { getOpenRouterKey, openRouterHeaders } from '../lib/openrouter';
+import { resumirPlataforma, resumirEntrenador } from '../lib/platformStats';
 import ProgressRings from '../components/ProgressRings';
 import ActivityCalendar from '../components/ActivityCalendar';
 import Trophies from '../components/Trophies';
@@ -16,8 +17,6 @@ import MuscleMap from '../components/MuscleMap';
 export default function Dashboard() {
   const navigate = useNavigate();
   const { userRole, currentUser } = useAuth();
-  const [studentCount, setStudentCount] = useState(0);
-  
   // Data for charts
   const [rmLogs, setRmLogs] = useState([]);
   const [metricLogs, setMetricLogs] = useState([]);
@@ -35,21 +34,75 @@ export default function Dashboard() {
   const [quickWeightValue, setQuickWeightValue] = useState('');
   const [currentStreak, setCurrentStreak] = useState(0);
   const [leaderboard, setLeaderboard] = useState([]);
+  // null mientras se cargan: las tarjetas enseñan "—" en vez de un 0 que
+  // parecería un dato real («0 alumnos» y «cargando» no son lo mismo).
+  const [adminMetrics, setAdminMetrics] = useState(null);
+  const [trainerMetrics, setTrainerMetrics] = useState(null);
 
   // UI state
   const [selectedExercise, setSelectedExercise] = useState('');
   const [selectedVolumeMuscle, setSelectedVolumeMuscle] = useState('Todos');
   const [chartMode, setChartMode] = useState('rm'); // 'rm', 'weight', 'fat', 'volume'
 
+  // Estadísticas de plataforma del panel de admin. Estuvieron escritas a mano
+  // (12 entrenadores, 148 alumnos, 356 rutinas, +24%), así que la pantalla
+  // principal del administrador enseñaba lo mismo tuviera la plataforma lo que
+  // tuviera.
+  useEffect(() => {
+    if (userRole !== ROLES.ADMIN || !currentUser) return;
+    let cancelado = false;
+
+    // getCountFromServer no tiene respaldo en caché: sin conexión falla. Como
+    // la app se usa offline a propósito, se cae a contar los documentos, que sí
+    // responde desde la caché de Firestore.
+    const contar = async (nombre) => {
+      try {
+        const agregado = await getCountFromServer(collection(db, nombre));
+        return agregado.data().count;
+      } catch {
+        const snap = await getDocs(collection(db, nombre));
+        return snap.size;
+      }
+    };
+
+    const cargar = async () => {
+      try {
+        const [usuariosSnap, rutinas] = await Promise.all([
+          getDocs(collection(db, 'users')),
+          contar('workouts'),
+        ]);
+        const usuarios = usuariosSnap.docs.map((d) => d.data());
+        // Las reglas de recuento (rol antiguo, bajas, altas sin fecha) viven en
+        // lib/platformStats.js para poder comprobarlas sin montar la página.
+        if (!cancelado) setAdminMetrics(resumirPlataforma(usuarios, rutinas));
+      } catch (error) {
+        console.error('Error cargando las estadísticas de plataforma', error);
+        if (!cancelado) setAdminMetrics({ error: true });
+      }
+    };
+
+    cargar();
+    return () => { cancelado = true; };
+  }, [userRole, currentUser]);
+
   useEffect(() => {
     if (userRole === ROLES.TRAINER && currentUser) {
       const fetchStats = async () => {
         try {
-          const q = query(collection(db, "users"), where("role", "==", "student"), where("trainerId", "==", currentUser.uid));
-          const snap = await getDocs(q);
-          setStudentCount(snap.size);
+          // Sin el filtro `role == 'student'` en la consulta: se filtra en
+          // memoria con normalizeRole, porque los alumnos con la etiqueta
+          // antigua 'user' no encajaban y quedaban sin contar.
+          const [alumnosSnap, rutinasSnap] = await Promise.all([
+            getDocs(query(collection(db, "users"), where("trainerId", "==", currentUser.uid))),
+            getDocs(query(collection(db, "workouts"), where("trainerId", "==", currentUser.uid))),
+          ]);
+          setTrainerMetrics(resumirEntrenador(
+            alumnosSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+            rutinasSnap.docs.map((d) => d.data()),
+          ));
         } catch (error) {
-          console.error(error);
+          console.error('Error cargando las estadísticas del entrenador', error);
+          setTrainerMetrics({ error: true });
         }
       };
       fetchStats();
@@ -552,18 +605,45 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
     );
   };
 
+  // Mientras carga (o si la lectura falla) se enseña "—": un 0 se leería como
+  // un dato y llevaría a conclusiones equivocadas sobre la plataforma.
+  const cifra = (valor) => (typeof valor === 'number' ? valor.toLocaleString('es-ES') : '—');
+  const crecimiento = adminMetrics?.crecimiento;
   const adminStats = [
-    { title: 'Entrenadores Activos', value: '12', icon: Users, color: 'var(--primary)' },
-    { title: 'Alumnos Totales', value: '148', icon: Activity, color: '#3b82f6' },
-    { title: 'Rutinas Creadas', value: '356', icon: Dumbbell, color: '#a855f7' },
-    { title: 'Crecimiento', value: '+24%', icon: TrendingUp, color: '#10b981' },
+    { title: 'Entrenadores Activos', value: cifra(adminMetrics?.entrenadores), icon: Users, color: 'var(--primary)' },
+    { title: 'Alumnos Totales', value: cifra(adminMetrics?.alumnos), icon: Activity, color: '#3b82f6' },
+    { title: 'Rutinas Creadas', value: cifra(adminMetrics?.rutinas), icon: Dumbbell, color: '#a855f7' },
+    {
+      title: 'Crecimiento',
+      value: typeof crecimiento === 'number' ? `${crecimiento > 0 ? '+' : ''}${crecimiento}%` : '—',
+      icon: TrendingUp,
+      color: '#10b981',
+      // Un porcentaje suelto no dice de qué; y cuando no hay con qué comparar,
+      // conviene decir por qué en vez de dejar un guion mudo.
+      hint: typeof crecimiento === 'number'
+        ? `${adminMetrics.nuevos} altas en 30 días, frente a ${adminMetrics.previos}`
+        : adminMetrics && !adminMetrics.error
+          ? 'Sin altas en el mes anterior con las que comparar'
+          : null,
+    },
   ];
 
+  const retencion = trainerMetrics?.retencion;
   const trainerStats = [
-    { title: 'Mis Alumnos', value: studentCount.toString(), icon: Users, color: 'var(--primary)' },
-    { title: 'Rutinas Asignadas', value: '24', icon: ClipboardList, color: '#3b82f6' },
-    { title: 'Sesiones Completadas', value: '156', icon: CheckCircle, color: '#10b981' },
-    { title: 'Retención', value: '92%', icon: TrendingUp, color: '#a855f7' },
+    { title: 'Mis Alumnos', value: cifra(trainerMetrics?.alumnos), icon: Users, color: 'var(--primary)' },
+    { title: 'Rutinas Asignadas', value: cifra(trainerMetrics?.asignadas), icon: ClipboardList, color: '#3b82f6' },
+    { title: 'Sesiones Completadas', value: cifra(trainerMetrics?.completadas), icon: CheckCircle, color: '#10b981' },
+    {
+      title: 'Retención',
+      value: typeof retencion === 'number' ? `${retencion}%` : '—',
+      icon: TrendingUp,
+      color: '#a855f7',
+      hint: typeof retencion === 'number'
+        ? `${trainerMetrics.activos} de ${trainerMetrics.alumnos} han entrenado en 30 días`
+        : trainerMetrics && !trainerMetrics.error
+          ? 'Todavía no tienes alumnos asignados'
+          : null,
+    },
   ];
 
   const studentStatsArray = [
@@ -618,6 +698,7 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
                 <div className="stat-info">
                   <h3>{stat.value}</h3>
                   <p>{stat.title}</p>
+                  {stat.hint && <p className="stat-hint">{stat.hint}</p>}
                 </div>
               </div>
             ))}
@@ -961,6 +1042,17 @@ Peso Corporal: ${JSON.stringify(summaryWeights)}`;
           color: var(--muted-foreground);
           font-size: 0.875rem;
           font-weight: 500;
+        }
+
+        /* Explica de qué es la cifra cuando el título solo no basta
+           ("Crecimiento" de qué, y respecto a qué). 12px es el mínimo legible
+           que exige la auditoría responsive. */
+        .stat-info .stat-hint {
+          margin-top: 0.15rem;
+          font-size: 12px;
+          font-weight: 400;
+          line-height: 1.35;
+          opacity: 0.75;
         }
 
         .dashboard-content {

@@ -38,11 +38,17 @@ const conLayout = params.get('layout') !== '0';
 currentRole.value = rol;
 const Page = PAGES[nombre] || Dashboard;
 
+// Se registran TODAS las páginas, no sólo la de `?page=`. Con una sola ruta,
+// pulsar cualquier enlace del menú llevaba a una ruta que no existía: no
+// encajaba ni la del Layout, así que React desmontaba la app entera y dejaba
+// `#root` vacío. Parecía un fallo de la app y era del banco de pruebas.
 const contenido = conLayout ? (
   <MemoryRouter initialEntries={[`/${nombre}`]}>
     <Routes>
       <Route element={<Layout />}>
-        <Route path={`/${nombre}`} element={<Page />} />
+        {Object.entries(PAGES).map(([ruta, Componente]) => (
+          <Route key={ruta} path={`/${ruta}`} element={<Componente />} />
+        ))}
       </Route>
     </Routes>
   </MemoryRouter>

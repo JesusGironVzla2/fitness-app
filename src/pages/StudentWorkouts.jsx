@@ -581,7 +581,7 @@ Formato requerido:
       
       {/* Floating Rest Timer */}
       {showRestTimer && (
-        <div style={{ position: 'fixed', bottom: '2rem', right: '2rem', background: 'var(--primary)', color: 'black', padding: '1rem 1.5rem', borderRadius: '50px', display: 'flex', alignItems: 'center', gap: '0.75rem', boxShadow: '0 4px 20px rgba(0,0,0,0.5)', zIndex: 50 }}>
+        <div className="rest-timer-flotante" style={{ position: 'fixed', bottom: '2rem', right: '2rem', background: 'var(--primary)', color: 'black', padding: '1rem 1.5rem', borderRadius: '50px', display: 'flex', alignItems: 'center', gap: '0.75rem', boxShadow: '0 4px 20px rgba(0,0,0,0.5)', zIndex: 50 }}>
           <Timer size={24} />
           <span style={{ fontSize: '1.5rem', fontWeight: 'bold', fontFamily: 'monospace' }}>{formatTime(restTimer)}</span>
           <button onClick={() => { setShowRestTimer(false); setRestTimer(0); }} style={{ background: 'transparent', border: 'none', color: 'black', cursor: 'pointer', marginLeft: '0.5rem', display: 'flex' }}>

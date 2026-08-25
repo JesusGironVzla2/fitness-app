@@ -21,6 +21,12 @@ export async function getDocs(q) {
   if (col === 'exercises' && __fixtures.exercises.length) return snapDe(__fixtures.exercises);
   return emptySnap;
 }
+// El panel de admin cuenta las rutinas con el agregado del servidor. Se apoya
+// en getDocs para que los fixtures inyectados también valgan aquí.
+export async function getCountFromServer(q) {
+  const snap = await getDocs(q);
+  return { data: () => ({ count: snap.size }) };
+}
 export async function getDoc() { return { exists: () => false, data: () => ({}), id: 'mock' }; }
 export async function addDoc() { return { id: 'new' }; }
 export async function setDoc() {}

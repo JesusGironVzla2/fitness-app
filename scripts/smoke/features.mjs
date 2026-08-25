@@ -11,6 +11,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { construirHistorialPorEjercicio, hace, resumirSesion } from '../../src/lib/history.js';
+import { resumirPlataforma, resumirEntrenador } from '../../src/lib/platformStats.js';
 
 let n = 0;
 const ok = (m) => { n++; console.log('  ✓', m); };
@@ -154,6 +155,149 @@ const leer = (p) => fs.readFileSync(p, 'utf8');
   // Un alumno sin nombre ni teléfono no debe reventar el filtro
   assert.equal(filtrar('sinnombre', 'todos').length, 1);
   ok('Búsqueda — filtra por nombre, correo y teléfono, y combina con el estado');
+}
+
+// ------------------------------------------------- 5. Navegación sin enlaces rotos
+{
+  // Un destino del menú sin ruta en App.jsx no da error en ninguna parte: el
+  // usuario pulsa, no encaja ninguna ruta y se queda mirando una página vacía.
+  // Aquí se comprueba que cada enlace del menú tenga su ruta y al revés.
+  const nav = leer('src/lib/navigation.js');
+  const app = leer('src/App.jsx');
+
+  const destinos = [...nav.matchAll(/path: '([^']+)'/g)].map((m) => m[1]);
+  const rutas = [...app.matchAll(/<Route path="([^"]+)"/g)].map((m) => m[1]);
+
+  assert.ok(destinos.length >= 15, `se esperaban al menos 15 destinos, hay ${destinos.length}`);
+  const sinRuta = destinos.filter((d) => !rutas.includes(d));
+  assert.deepEqual(sinRuta, [], `destinos del menú sin ruta en App.jsx: ${sinRuta.join(', ')}`);
+  ok('Navegación — todos los enlaces del menú tienen ruta declarada');
+
+  const huerfanas = rutas.filter((r) => !destinos.includes(r) && !['/login', '/'].includes(r));
+  assert.deepEqual(huerfanas, [], `rutas a las que no lleva ningún enlace: ${huerfanas.join(', ')}`);
+  ok('Navegación — no hay páginas inalcanzables desde el menú');
+
+  // El banco de pruebas responsive registra su propia tabla de rutas. Si sólo
+  // monta la página de `?page=`, pulsar cualquier enlace desmonta la app entera
+  // y parece un fallo del producto cuando es del banco.
+  const banco = leer('scripts/responsive/main.jsx');
+  assert.match(
+    banco,
+    /Object\.entries\(PAGES\)[\s\S]{0,200}<Route/,
+    'scripts/responsive/main.jsx debe registrar todas las páginas, no sólo la de ?page='
+  );
+  ok('Navegación — el banco de pruebas registra todas las páginas');
+}
+
+// ------------------------------------------- 6. Estadísticas de la plataforma
+{
+  const DIA = 24 * 60 * 60 * 1000;
+  const AHORA = new Date('2026-08-25T12:00:00Z').getTime();
+  const haceDias = (dias) => new Date(AHORA - dias * DIA).toISOString();
+
+  const usuarios = [
+    { role: 'admin', status: 'active' },
+    { role: 'trainer', status: 'active' },
+    { role: 'trainer', status: 'active' },
+    { role: 'trainer', status: 'suspended' },   // no es un entrenador *activo*
+    { role: 'trainer', status: 'deleted' },     // baja
+    { role: 'student', status: 'active', createdAt: haceDias(5) },
+    { role: 'student', status: 'active', createdAt: haceDias(20) },
+    { role: 'user', status: 'active', createdAt: haceDias(40) },   // etiqueta antigua
+    { role: 'student', status: 'suspended', createdAt: haceDias(50) },
+    { role: 'student', status: 'deleted', createdAt: haceDias(3) }, // baja
+    { role: undefined, status: 'active' },      // sin rol: se degrada a alumno
+    null,
+  ];
+
+  const r = resumirPlataforma(usuarios, 356, AHORA);
+  assert.equal(r.entrenadores, 2, 'los entrenadores suspendidos y de baja no son activos');
+  // 5 = dos 'student' activos + el rol antiguo 'user' + el suspendido + el que
+  // no tiene rol, que normalizeRole degrada a alumno. Fuera queda la baja.
+  assert.equal(r.alumnos, 5, "cuenta el rol antiguo 'user', el suspendido y el que no tiene rol");
+  assert.equal(r.rutinas, 356);
+  assert.equal(r.nuevos, 2, 'altas de alumnos en los últimos 30 días');
+  assert.equal(r.previos, 2, 'altas de alumnos en los 30 días anteriores');
+  assert.equal(r.crecimiento, 0, '2 frente a 2 es 0%, no un +24% inventado');
+  ok('Plataforma — cuenta roles, bajas y suspendidos según sus reglas');
+
+  const sinFechas = resumirPlataforma(
+    [{ role: 'student', status: 'active' }, { role: 'student', status: 'active' }], 0, AHORA
+  );
+  assert.equal(sinFechas.alumnos, 2);
+  assert.equal(sinFechas.crecimiento, null, 'sin altas con las que comparar no se inventa un porcentaje');
+  ok('Plataforma — sin datos de alta el crecimiento es null, no 0%');
+
+  const creciendo = resumirPlataforma(
+    [
+      { role: 'student', status: 'active', createdAt: haceDias(1) },
+      { role: 'student', status: 'active', createdAt: haceDias(2) },
+      { role: 'student', status: 'active', createdAt: haceDias(3) },
+      { role: 'student', status: 'active', createdAt: haceDias(45) },
+    ], 0, AHORA
+  );
+  assert.equal(creciendo.crecimiento, 200, '3 altas frente a 1 es un +200%');
+  ok('Plataforma — el crecimiento compara 30 días contra los 30 anteriores');
+
+  assert.deepEqual(
+    resumirPlataforma(null, undefined, AHORA),
+    { entrenadores: 0, alumnos: 0, rutinas: 0, nuevos: 0, previos: 0, crecimiento: null },
+    'sin datos no debe reventar'
+  );
+  ok('Plataforma — tolera una lista de usuarios vacía o nula');
+
+  // ------------------------------------------- Panel de entrenador
+  const alumnosDelCoach = [
+    { id: 'a1', role: 'student', status: 'active' },
+    { id: 'a2', role: 'user', status: 'active' },        // etiqueta antigua
+    { id: 'a3', role: 'student', status: 'suspended' },  // suspendido: sigue contando
+    { id: 'a4', role: 'student', status: 'deleted' },    // baja: no cuenta
+  ];
+  const rutinasDelCoach = [
+    { studentId: 'a1', completed: true, date: haceDias(2) },
+    { studentId: 'a1', completed: true, date: haceDias(9) },  // el mismo alumno otra vez
+    { studentId: 'a2', completed: true, date: haceDias(80) }, // entrenó, pero hace mucho
+    { studentId: 'a3', completed: false, date: haceDias(1) }, // asignada sin completar
+    { studentId: 'a4', completed: true, date: haceDias(1) },  // el que está de baja
+    { studentId: 'a1', completed: true },                     // sin fecha
+  ];
+
+  const t = resumirEntrenador(alumnosDelCoach, rutinasDelCoach, AHORA);
+  assert.equal(t.alumnos, 3, 'cuenta el rol antiguo y el suspendido, no la baja');
+  assert.equal(t.asignadas, 6, 'asignadas son todas las rutinas, completadas o no');
+  // 5: las cinco marcadas como completadas, incluida la que no tiene fecha.
+  // Se completó igual; lo único que no sabemos es cuándo, y eso sólo afecta a
+  // la retención.
+  assert.equal(t.completadas, 5);
+  assert.equal(t.activos, 1, 'a1 cuenta una sola vez; a2 entrenó hace 80 días; a4 está de baja');
+  assert.equal(t.retencion, 33, '1 de 3 alumnos activos');
+  ok('Entrenador — retención por alumnos distintos, no por sesiones');
+
+  const sinAlumnos = resumirEntrenador([], [], AHORA);
+  assert.equal(sinAlumnos.retencion, null, 'sin alumnos no hay retención que medir');
+  assert.deepEqual(
+    resumirEntrenador(null, null, AHORA),
+    { alumnos: 0, asignadas: 0, completadas: 0, activos: 0, retencion: null },
+    'sin datos no debe reventar'
+  );
+  ok('Entrenador — sin alumnos la retención es null, no 0%');
+
+  // La razón de existir de todo esto: que no vuelvan a ser constantes.
+  const dash = leer('src/pages/Dashboard.jsx');
+  const trozo = (desde, hasta) => dash.slice(dash.indexOf(desde), dash.indexOf(hasta));
+
+  const bloqueAdmin = trozo('const adminStats', 'const trainerStats');
+  for (const inventado of ["'12'", "'148'", "'356'", "'+24%'"]) {
+    assert.ok(!bloqueAdmin.includes(inventado), `las tarjetas de admin vuelven a tener ${inventado} a mano`);
+  }
+  assert.ok(bloqueAdmin.includes('adminMetrics'), 'las tarjetas de admin deben leer los datos cargados');
+
+  const bloqueCoach = trozo('const trainerStats', 'const studentStatsArray');
+  for (const inventado of ["'24'", "'156'", "'92%'"]) {
+    assert.ok(!bloqueCoach.includes(inventado), `las tarjetas de entrenador vuelven a tener ${inventado} a mano`);
+  }
+  assert.ok(bloqueCoach.includes('trainerMetrics'), 'las tarjetas de entrenador deben leer los datos cargados');
+  ok('Plataforma — ninguna tarjeta lleva cifras escritas a mano');
 }
 
 console.log(`\n  ${n} comprobaciones OK`);

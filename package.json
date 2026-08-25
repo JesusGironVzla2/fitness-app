@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
+    "mock": "vite --config scripts/responsive/vite.config.js --port 5200 --host 127.0.0.1",
     "preview": "vite preview",
     "smoke": "vite build --config scripts/smoke/vite.ssr.config.js && node scripts/smoke/run.mjs && node scripts/smoke/calc.mjs && node scripts/smoke/lastsession.mjs && node scripts/smoke/features.mjs",
     "responsive": "vite build --config scripts/responsive/vite.config.js && node scripts/responsive/audit.mjs && node scripts/responsive/interact.mjs"
