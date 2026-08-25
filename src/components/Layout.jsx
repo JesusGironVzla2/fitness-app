@@ -1,41 +1,32 @@
 import React, { useState, useRef } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { 
-  LayoutDashboard, 
-  Users, 
-  Dumbbell, 
-  Settings, 
+import {
+  Dumbbell,
   LogOut,
   Menu,
   X,
   Bell,
-  Pill,
-  UserSquare2,
-  ListTodo,
-  Activity,
-  MessageSquare,
-  ClipboardList,
-  LifeBuoy,
-  Sparkles,
+  Search,
   Flame,
-  Heart,
-  Scale,
-  Flame as FlameIcon,
-  CloudOff
+  CloudOff,
+  ChevronDown,
 } from 'lucide-react';
 import '../styles/global.css';
 import NotificationPanel from './NotificationPanel';
 import AICoachChat from './AICoachChat';
+import NavSearch from './NavSearch';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { dayKey, workoutDate } from '../lib/dates';
 import { roleLabel } from '../lib/roles';
+import { navSections, quickItems } from '../lib/navigation';
 
 export default function Layout() {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
   const [streak, setStreak] = useState(0);
   const [sinConexion, setSinConexion] = useState(() => typeof navigator !== 'undefined' && navigator.onLine === false);
   const navigate = useNavigate();
@@ -86,6 +77,20 @@ export default function Layout() {
     };
   }, [showNotifications, showProfileMenu]);
 
+  // Atajo del buscador rápido. Ctrl+K (Cmd+K en Mac) es el que ya espera
+  // cualquiera que use otras herramientas, así que no hay que enseñarlo.
+  React.useEffect(() => {
+    const handleKeyDown = (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setShowSearch(true);
+        setSidebarOpen(false);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const handleLogout = async () => {
     try {
       await logout();
@@ -111,16 +116,16 @@ export default function Layout() {
             .filter(Boolean)
             .map(dayKey);
           const uniqueDates = [...new Set(dates)].sort().reverse();
-          
+
           let currentStreak = 0;
           let checkDate = new Date();
-          
+
           if (uniqueDates.length > 0) {
             const todayStr = dayKey(checkDate);
             const yesterday = new Date();
             yesterday.setDate(yesterday.getDate() - 1);
             const yesterdayStr = dayKey(yesterday);
-            
+
             let dateIdx = 0;
             if (uniqueDates[0] === todayStr) {
               currentStreak++;
@@ -134,7 +139,7 @@ export default function Layout() {
               setStreak(0);
               return;
             }
-            
+
             while (dateIdx < uniqueDates.length) {
               const expectedStr = dayKey(checkDate);
               if (uniqueDates[dateIdx] === expectedStr) {
@@ -155,53 +160,47 @@ export default function Layout() {
     }
   }, [currentUser]);
 
-  const navItems = {
-    admin: [
-      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-      { name: 'Entrenadores', path: '/entrenadores', icon: Users },
-      { name: 'Mis Alumnos', path: '/alumnos', icon: UserSquare2 },
-      { name: 'Ejercicios', path: '/ejercicios', icon: Dumbbell },
-      { name: 'Rutinas', path: '/rutinas', icon: ListTodo },
-      { name: 'Mis Rutinas', path: '/mis-rutinas', icon: ClipboardList },
-      { name: 'Mi Progreso', path: '/progreso', icon: Activity },
-      { name: 'Control Corporal', path: '/control-corporal', icon: Scale },
-      { name: 'Fuerza e Hipertrofia', path: '/fuerza-hipertrofia', icon: FlameIcon },
-      { name: 'Suplementación', path: '/suplementacion', icon: Pill },
-      { name: 'Mensajes', path: '/mensajes', icon: MessageSquare },
-      { name: 'Consejos', path: '/consejos', icon: Sparkles },
-      { name: 'Soporte', path: '/soporte', icon: LifeBuoy },
-      { name: 'Configuración', path: '/configuracion', icon: Settings },
-    ],
-    trainer: [
-      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-      { name: 'Mis Alumnos', path: '/alumnos', icon: UserSquare2 },
-      { name: 'Ejercicios', path: '/ejercicios', icon: Dumbbell },
-      { name: 'Rutinas', path: '/rutinas', icon: ListTodo },
-      { name: 'Mis Rutinas', path: '/mis-rutinas', icon: ClipboardList },
-      { name: 'Mi Progreso', path: '/progreso', icon: Activity },
-      { name: 'Control Corporal', path: '/control-corporal', icon: Scale },
-      { name: 'Fuerza e Hipertrofia', path: '/fuerza-hipertrofia', icon: FlameIcon },
-      { name: 'Suplementación', path: '/suplementacion', icon: Pill },
-      { name: 'Mensajes', path: '/mensajes', icon: MessageSquare },
-      { name: 'Consejos', path: '/consejos', icon: Sparkles },
-      { name: 'Soporte', path: '/soporte', icon: LifeBuoy },
-      { name: 'Configuración', path: '/configuracion', icon: Settings },
-    ],
-    student: [
-      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-      { name: 'Mis Rutinas', path: '/mis-rutinas', icon: ClipboardList },
-      { name: 'Mi Progreso', path: '/progreso', icon: Activity },
-      { name: 'Control Corporal', path: '/control-corporal', icon: Scale },
-      { name: 'Fuerza e Hipertrofia', path: '/fuerza-hipertrofia', icon: FlameIcon },
-      { name: 'Mensajes', path: '/mensajes', icon: MessageSquare },
-      { name: 'Consejos', path: '/consejos', icon: Sparkles },
-      { name: 'Wellness', path: '/wellness', icon: Heart },
-      { name: 'Soporte', path: '/soporte', icon: LifeBuoy },
-      { name: 'Configuración', path: '/configuracion', icon: Settings },
-    ]
-  };
+  // El menú y la barra inferior salen de `lib/navigation.js`, agrupados por
+  // tarea: catorce enlaces seguidos sin jerarquía obligaban a leerlos todos
+  // para encontrar uno.
+  const secciones = navSections(userRole);
+  const accesosRapidos = quickItems(userRole);
 
-  const currentNavItems = navItems[userRole] || navItems.student;
+  // Las secciones se pliegan porque, desplegadas todas, un admin tenía 14
+  // enlaces + 5 títulos: 950px de menú en un hueco de 580px, con seis destinos
+  // fuera de pantalla salvo que supieras que aquello se desplazaba. Plegadas,
+  // el menú entero cabe de un vistazo.
+  const { pathname } = useLocation();
+  const seccionActiva = secciones.find((s) => s.items.some((i) => i.path === pathname))?.title;
+
+  const CLAVE_SECCIONES = 'coachnode:secciones-abiertas';
+  const [abiertas, setAbiertas] = useState(() => {
+    try {
+      const guardado = JSON.parse(window.localStorage.getItem(CLAVE_SECCIONES));
+      if (Array.isArray(guardado)) return guardado;
+    } catch {
+      // Sin localStorage (SSR, navegación privada) se empieza de cero.
+    }
+    return [];
+  });
+
+  // La sección donde estás siempre se ve abierta: si llegas por la barra
+  // inferior o por el buscador, el menú tiene que enseñarte dónde estás.
+  const seccionesAbiertas = seccionActiva && !abiertas.includes(seccionActiva)
+    ? [...abiertas, seccionActiva]
+    : abiertas;
+
+  const alternarSeccion = (titulo) => {
+    const siguiente = seccionesAbiertas.includes(titulo)
+      ? seccionesAbiertas.filter((t) => t !== titulo)
+      : [...seccionesAbiertas, titulo];
+    setAbiertas(siguiente);
+    try {
+      window.localStorage.setItem(CLAVE_SECCIONES, JSON.stringify(siguiente));
+    } catch {
+      // Que no se recuerde el estado no es motivo para romper la navegación.
+    }
+  };
 
   return (
     <div className="layout-container">
@@ -215,23 +214,54 @@ export default function Layout() {
         <div className="sidebar-header">
           <Dumbbell className="logo-icon" size={32} color="var(--primary)" />
           <h2>Coach<span className="accent">Node</span></h2>
-          <button className="mobile-close" onClick={() => setSidebarOpen(false)}>
+          <button className="mobile-close" onClick={() => setSidebarOpen(false)} aria-label="Cerrar menú">
             <X size={24} />
           </button>
         </div>
 
+        <div className="sidebar-search">
+          <button
+            type="button"
+            className="search-trigger"
+            onClick={() => { setSidebarOpen(false); setShowSearch(true); }}
+          >
+            <Search size={18} />
+            <span>Buscar…</span>
+            <kbd>Ctrl K</kbd>
+          </button>
+        </div>
+
         <nav className="sidebar-nav">
-          {currentNavItems.map((item) => (
-            <NavLink 
-              key={item.path} 
-              to={item.path} 
-              className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-              onClick={() => setSidebarOpen(false)}
-            >
-              <item.icon size={20} />
-              <span>{item.name}</span>
-            </NavLink>
-          ))}
+          {secciones.map((seccion) => {
+            const abierta = seccionesAbiertas.includes(seccion.title);
+            return (
+              <div className={`nav-section ${abierta ? 'abierta' : ''}`} key={seccion.title}>
+                <button
+                  type="button"
+                  className="nav-section-title"
+                  aria-expanded={abierta}
+                  onClick={() => alternarSeccion(seccion.title)}
+                >
+                  <span>{seccion.title}</span>
+                  {/* El contador evita tener que abrir una sección para saber
+                      si lo que buscas puede estar dentro. */}
+                  <span className="nav-section-cuenta">{seccion.items.length}</span>
+                  <ChevronDown size={16} className="nav-section-chevron" />
+                </button>
+                {abierta && seccion.items.map((item) => (
+                  <NavLink
+                    key={item.path}
+                    to={item.path}
+                    className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+                    onClick={() => setSidebarOpen(false)}
+                  >
+                    <item.icon size={20} />
+                    <span>{item.name}</span>
+                  </NavLink>
+                ))}
+              </div>
+            );
+          })}
         </nav>
 
         <div className="sidebar-footer">
@@ -253,7 +283,7 @@ export default function Layout() {
 
         <header className="topbar glass">
           <div className="topbar-left">
-            <button className="mobile-toggle" onClick={() => setSidebarOpen(true)}>
+            <button className="mobile-toggle" onClick={() => setSidebarOpen(true)} aria-label="Abrir menú">
               <Menu size={24} />
             </button>
             <h3>Panel de {roleLabel(userRole)}</h3>
@@ -264,10 +294,10 @@ export default function Layout() {
             )}
           </div>
           <div className="topbar-right">
-            
+
             {/* Streak Indicator */}
             {streak > 0 && (
-              <button 
+              <button
                 onClick={() => navigate('/mis-rutinas')}
                 style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', background: 'rgba(249, 115, 22, 0.15)', padding: '0.35rem 0.75rem', borderRadius: '50px', color: '#f97316', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}
                 title="Días seguidos entrenando. ¡No pierdas tu racha!"
@@ -286,12 +316,12 @@ export default function Layout() {
               )}
             </div>
             {isImpersonating && (
-              <button 
-                className="btn-secondary" 
+              <button
+                className="btn-secondary"
                 onClick={() => {
                   stopImpersonating();
                   navigate('/');
-                }} 
+                }}
                 style={{ fontSize: '0.8rem', padding: '0.5rem 1rem' }}
               >
                 Salir de Vista
@@ -302,16 +332,16 @@ export default function Layout() {
                 <div className="avatar">{roleLabel(userRole).charAt(0)}</div>
                 <span className="user-name">{roleLabel(userRole)}</span>
               </div>
-              
+
               {showProfileMenu && (
-                <div 
-                  className="glass" 
-                  style={{ 
-                    position: 'absolute', 
-                    top: '100%', 
-                    right: 0, 
-                    marginTop: '0.5rem', 
-                    padding: '0.5rem', 
+                <div
+                  className="glass"
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    right: 0,
+                    marginTop: '0.5rem',
+                    padding: '0.5rem',
                     borderRadius: 'var(--radius)',
                     minWidth: '160px',
                     zIndex: 100,
@@ -319,8 +349,8 @@ export default function Layout() {
                     flexDirection: 'column'
                   }}
                 >
-                  <button 
-                    className="nav-item logout-btn" 
+                  <button
+                    className="nav-item logout-btn"
                     onClick={handleLogout}
                     style={{ padding: '0.75rem', width: '100%', justifyContent: 'flex-start', margin: 0, fontSize: '0.9rem' }}
                   >
@@ -336,7 +366,33 @@ export default function Layout() {
         <div className="page-content">
           <Outlet />
         </div>
-        
+
+        {/* Barra inferior del móvil: los cuatro destinos de uso diario más el
+            acceso al menú completo. Con el menú lateral como única navegación
+            hacían falta dos gestos (abrir el cajón y buscar el enlace) para
+            cambiar de página; aquí es uno. */}
+        <nav className="bottom-nav" aria-label="Accesos rápidos">
+          {accesosRapidos.map((item) => (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              className={({ isActive }) => `bottom-nav-item ${isActive ? 'active' : ''}`}
+            >
+              <item.icon size={20} />
+              <span>{item.short}</span>
+            </NavLink>
+          ))}
+          <button
+            type="button"
+            className="bottom-nav-item"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Ver todo el menú"
+          >
+            <Menu size={20} />
+            <span>Más</span>
+          </button>
+        </nav>
+
         {/* Asistente IA. Va envuelto porque su botón flotante es `position:
             fixed; left: 2rem`, lo que en escritorio lo pone encima del menú
             lateral y en móvil, con el menú abierto, justo sobre "Cerrar Sesión".
@@ -345,6 +401,8 @@ export default function Layout() {
           <AICoachChat />
         </div>
       </main>
+
+      {showSearch && <NavSearch role={userRole} onClose={() => setShowSearch(false)} />}
 
       <style>{`
         .layout-container {
@@ -379,29 +437,131 @@ export default function Layout() {
           flex-shrink: 0;
         }
 
+        .sidebar-search {
+          padding: 1rem 1rem 0;
+        }
+
+        .search-trigger {
+          display: flex;
+          align-items: center;
+          gap: 0.625rem;
+          width: 100%;
+          min-height: 44px;
+          padding: 0.625rem 0.75rem;
+          background: rgba(255, 255, 255, 0.04);
+          border: 1px solid var(--border);
+          border-radius: var(--radius);
+          color: var(--muted-foreground);
+          font-size: 0.95rem;
+          transition: border-color 0.2s, color 0.2s;
+        }
+
+        .search-trigger:hover {
+          border-color: var(--primary);
+          color: var(--foreground);
+        }
+
+        .search-trigger span {
+          flex: 1;
+          text-align: left;
+        }
+
+        .search-trigger kbd {
+          font-family: inherit;
+          font-size: 0.75rem;
+          padding: 0.15rem 0.4rem;
+          border: 1px solid var(--border);
+          border-radius: 0.35rem;
+          white-space: nowrap;
+        }
+
         .sidebar-nav {
           flex: 1;
-          padding: 1.5rem 1rem;
+          padding: 1rem;
           display: flex;
           flex-direction: column;
-          gap: 0.5rem;
+          gap: 0.75rem;
           overflow-y: auto;
         }
-        
+
         .sidebar-nav::-webkit-scrollbar {
           width: 4px;
         }
-        
+
         .sidebar-nav::-webkit-scrollbar-thumb {
           background-color: var(--border);
           border-radius: 4px;
+        }
+
+        .nav-section {
+          display: flex;
+          flex-direction: column;
+          gap: 0.25rem;
+        }
+
+        /* En mayúsculas pequeñas para que la sección no compita visualmente con
+           sus propios destinos; si se leyera igual que un enlace volveríamos a
+           tener una lista plana. */
+        .nav-section-title {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          width: 100%;
+          min-height: 40px;
+          margin: 0;
+          padding: 0.5rem 0.75rem;
+          border: none;
+          background: transparent;
+          border-radius: calc(var(--radius) - 0.25rem);
+          font-size: 12px;
+          font-weight: 600;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: var(--muted-foreground);
+          text-align: left;
+          transition: color 0.2s, background 0.2s;
+        }
+
+        .nav-section-title:hover {
+          background: rgba(255, 255, 255, 0.04);
+          color: var(--foreground);
+        }
+
+        .nav-section-title > span:first-child {
+          flex: 1;
+        }
+
+        .nav-section-cuenta {
+          font-size: 12px;
+          font-weight: 600;
+          letter-spacing: 0;
+          opacity: 0.5;
+        }
+
+        /* Plegada, la sección con la página actual se marca para no perder de
+           vista dónde estás cuando cierras el resto. */
+        .nav-section.abierta > .nav-section-title {
+          color: var(--foreground);
+        }
+
+        .nav-section-chevron {
+          flex-shrink: 0;
+          transition: transform 0.2s ease;
+        }
+
+        .nav-section.abierta .nav-section-chevron {
+          transform: rotate(180deg);
+        }
+
+        .nav-section.abierta .nav-section-cuenta {
+          display: none;
         }
 
         .nav-item {
           display: flex;
           align-items: center;
           gap: 1rem;
-          padding: 0.875rem 1rem;
+          padding: 0.75rem 1rem;
           border-radius: var(--radius);
           color: var(--muted-foreground);
           text-decoration: none;
@@ -424,7 +584,7 @@ export default function Layout() {
         }
 
         .sidebar-footer {
-          padding: 1.5rem 1rem;
+          padding: 1rem;
           border-top: 1px solid var(--border);
         }
 
@@ -536,6 +696,12 @@ export default function Layout() {
           background: rgba(255, 255, 255, 0.08);
         }
 
+        /* La barra inferior sólo existe en móvil; en escritorio el menú lateral
+           siempre está a la vista y no aporta nada. */
+        .bottom-nav {
+          display: none;
+        }
+
         @media (max-width: 768px) {
           .sidebar {
             position: fixed;
@@ -544,7 +710,7 @@ export default function Layout() {
             bottom: 0;
             transform: translateX(-100%);
           }
-          
+
           .sidebar.open {
             transform: translateX(0);
           }
@@ -592,6 +758,57 @@ export default function Layout() {
 
           .page-content {
             padding: 1rem;
+            /* Hueco para que la barra inferior no tape el final de la página. */
+            padding-bottom: calc(var(--bottom-nav-h) + 1rem);
+          }
+
+          .bottom-nav {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: var(--bottom-nav-h);
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            background: rgba(9, 9, 11, 0.92);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-top: 1px solid var(--border);
+            /* Por debajo del menú lateral (50), su capa oscura (40) y los
+               modales (100): abierto el cajón, la barra no debe asomar. */
+            z-index: 35;
+            padding-bottom: env(safe-area-inset-bottom, 0px);
+          }
+
+          .bottom-nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.2rem;
+            min-width: 0;
+            border: none;
+            background: transparent;
+            color: var(--muted-foreground);
+            text-decoration: none;
+            font-size: 12px;
+            font-weight: 500;
+            padding: 0.35rem 0.15rem;
+          }
+
+          .bottom-nav-item span {
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+
+          .bottom-nav-item.active {
+            color: var(--primary);
+          }
+
+          .bottom-nav-item:active {
+            background: rgba(255, 255, 255, 0.05);
           }
         }
       `}</style>

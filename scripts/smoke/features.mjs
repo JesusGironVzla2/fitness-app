@@ -156,4 +156,36 @@ const leer = (p) => fs.readFileSync(p, 'utf8');
   ok('Búsqueda — filtra por nombre, correo y teléfono, y combina con el estado');
 }
 
+// ------------------------------------------------- 5. Navegación sin enlaces rotos
+{
+  // Un destino del menú sin ruta en App.jsx no da error en ninguna parte: el
+  // usuario pulsa, no encaja ninguna ruta y se queda mirando una página vacía.
+  // Aquí se comprueba que cada enlace del menú tenga su ruta y al revés.
+  const nav = leer('src/lib/navigation.js');
+  const app = leer('src/App.jsx');
+
+  const destinos = [...nav.matchAll(/path: '([^']+)'/g)].map((m) => m[1]);
+  const rutas = [...app.matchAll(/<Route path="([^"]+)"/g)].map((m) => m[1]);
+
+  assert.ok(destinos.length >= 15, `se esperaban al menos 15 destinos, hay ${destinos.length}`);
+  const sinRuta = destinos.filter((d) => !rutas.includes(d));
+  assert.deepEqual(sinRuta, [], `destinos del menú sin ruta en App.jsx: ${sinRuta.join(', ')}`);
+  ok('Navegación — todos los enlaces del menú tienen ruta declarada');
+
+  const huerfanas = rutas.filter((r) => !destinos.includes(r) && !['/login', '/'].includes(r));
+  assert.deepEqual(huerfanas, [], `rutas a las que no lleva ningún enlace: ${huerfanas.join(', ')}`);
+  ok('Navegación — no hay páginas inalcanzables desde el menú');
+
+  // El banco de pruebas responsive registra su propia tabla de rutas. Si sólo
+  // monta la página de `?page=`, pulsar cualquier enlace desmonta la app entera
+  // y parece un fallo del producto cuando es del banco.
+  const banco = leer('scripts/responsive/main.jsx');
+  assert.match(
+    banco,
+    /Object\.entries\(PAGES\)[\s\S]{0,200}<Route/,
+    'scripts/responsive/main.jsx debe registrar todas las páginas, no sólo la de ?page='
+  );
+  ok('Navegación — el banco de pruebas registra todas las páginas');
+}
+
 console.log(`\n  ${n} comprobaciones OK`);

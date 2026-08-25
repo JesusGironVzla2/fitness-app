@@ -40,7 +40,8 @@ descargar ningún navegador) a **320, 360, 390, 430, 768 y 1280 px** y comprueba
 - que ninguna página se desplace en horizontal;
 - que no haya texto por debajo de 12 px;
 - que ningún control táctil baje de 44 px en móvil;
-- que el menú lateral se abra, se cierre y no tape nada;
+- que el menú lateral se abra, se cierre, no tape nada y quepa entero sin
+  recortarse, y que al desplegar sus secciones aparezcan todos los enlaces;
 - que los modales quepan, se puedan recorrer de arriba abajo y no queden
   ocultos tras el botón flotante del asistente.
 
@@ -84,6 +85,31 @@ Tres roles, normalizados en `src/lib/roles.js`:
 
 `user` es una etiqueta antigua equivalente a `student`; `normalizeRole()` la
 traduce, así que en el código sólo se comparan los tres valores de arriba.
+
+## Navegación
+
+Todos los destinos se declaran una sola vez en `src/lib/navigation.js`, y de ahí
+salen las tres formas de moverse por la app:
+
+- **Menú lateral**, agrupado en secciones plegables —Entrenar, Mi progreso,
+  Gestión, Recursos, Cuenta— en vez de la lista plana de hasta 14 enlaces que
+  había antes. Cada rol ve sus secciones (`SECTIONS`), con los mismos permisos
+  de siempre: 14 destinos el admin, 13 el entrenador, 10 el alumno. Se pliegan
+  porque desplegadas ocupaban 950px en un hueco de 580px y un admin tenía seis
+  destinos por debajo del corte. Sólo se abre sola la sección de la página en la
+  que estás; lo que abras a mano se recuerda en `localStorage`.
+- **Barra inferior en móvil** (`QUICK_ITEMS`) con los cuatro destinos de uso
+  diario del rol más un botón «Más» que abre el menú completo. Su alto está en
+  la variable CSS `--bottom-nav-h`, que usan también el contenido de la página,
+  el botón del asistente y el cronómetro de descanso para no quedar tapados.
+- **Buscador rápido** con `Ctrl`/`Cmd` + `K` o desde la lupa del menú
+  (`src/components/NavSearch.jsx`). Busca por nombre, sección y palabras clave
+  (`keywords`) ignorando acentos, así que «peso» encuentra Control Corporal y
+  «chat» encuentra Mensajes.
+
+Para añadir una página: se declara en `ITEMS`, se mete en la sección que le
+toque dentro de `SECTIONS` y se registra su ruta en `src/App.jsx`. No hay que
+tocar `Layout.jsx`.
 
 ## Notas de funcionamiento
 

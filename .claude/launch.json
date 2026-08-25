@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--", "--port", "5199"],
       "port": 5199
+    },
+    {
+      "name": "fitness-mock",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "--config", "scripts/responsive/vite.config.js", "--port", "5200", "--host", "127.0.0.1"],
+      "port": 5200
     }
   ]
 }

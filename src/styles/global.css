@@ -27,6 +27,11 @@
   --ring: #a3e635;
 
   --radius: 0.75rem;
+
+  /* Alto de la barra de navegación inferior del móvil. Lo necesitan también el
+     contenido de la página y el botón del asistente, que reservan hueco para
+     no quedar tapados por ella. */
+  --bottom-nav-h: 62px;
 }
 
 * {
@@ -690,22 +695,31 @@ select option {
 }
 
 @media (max-width: 768px) {
+  /* Se levanta por encima de la barra inferior: apoyado en el borde tapaba
+     "Inicio" y el propio botón quedaba a medias. */
   .ai-coach-slot > button {
     left: 1rem !important;
-    bottom: 1rem !important;
+    bottom: calc(var(--bottom-nav-h) + 0.75rem) !important;
   }
 
   .ai-coach-slot > div {
     left: 1rem !important;
+    bottom: calc(var(--bottom-nav-h) + 0.75rem) !important;
     width: calc(100vw - 2rem) !important;
     max-width: 360px;
-    height: min(500px, calc(100vh - 6rem)) !important;
+    height: min(500px, calc(100vh - var(--bottom-nav-h) - 6rem)) !important;
   }
 
   /* Con el menú abierto, el botón caía justo sobre "Cerrar Sesión" y lo
      dejaba a medias sin poder pulsarse. */
   .ai-coach-slot.oculto {
     display: none;
+  }
+
+  /* El cronómetro de descanso se ancla a 2rem del borde inferior, justo donde
+     ahora está la barra de navegación: se subía encima de "Más" y "Mensajes". */
+  .rest-timer-flotante {
+    bottom: calc(var(--bottom-nav-h) + 0.75rem) !important;
   }
 }
 

@@ -93,17 +93,51 @@ async function abrir(page, pagina, rol, ancho, alto = 800) {
       x: Math.round(r.x),
       ancho: Math.round(r.width),
       overlay: !!document.querySelector('.sidebar-overlay'),
-      enlaces: document.querySelectorAll('.sidebar-nav .nav-item').length,
       desborde: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - window.innerWidth,
     };
   });
   anota('El menú se abre al pulsar', abierto.x === 0, `x=${abierto.x}px, ancho=${abierto.ancho}px`);
   anota('Aparece la capa oscura de fondo', abierto.overlay);
-  anota('Se ven todos los enlaces de navegación', abierto.enlaces >= 9, `${abierto.enlaces} enlaces`);
   anota('El menú abierto no provoca desborde', abierto.desborde <= 1, `${abierto.desborde}px`);
   anota('El menú no ocupa toda la pantalla', abierto.ancho <= 390, `${abierto.ancho}px de 390px`);
 
+  // Las secciones se pliegan, así que ya no se comprueba que estén los enlaces
+  // a la vista, sino que el menú entra entero en la pantalla y que cada sección
+  // enseña los suyos al abrirla. Antes, con todo desplegado, un admin tenía seis
+  // destinos por debajo del corte sin ninguna pista de que aquello se movía.
+  const plegado = await page.evaluate(() => {
+    const nav = document.querySelector('.sidebar-nav');
+    const caja = nav.getBoundingClientRect();
+    const titulos = [...document.querySelectorAll('.nav-section-title')];
+    return {
+      secciones: titulos.map((t) => t.textContent.trim()),
+      recorte: Math.round(nav.scrollHeight - nav.clientHeight),
+      titulosOcultos: titulos.filter((t) => t.getBoundingClientRect().bottom > caja.bottom + 1).length,
+    };
+  });
+  anota('Se ven todas las secciones del menú', plegado.titulosOcultos === 0,
+    `${plegado.secciones.length} secciones, ${plegado.titulosOcultos} fuera de pantalla`);
+  anota('El menú cabe sin recortarse', plegado.recorte <= 1, `sobra ${plegado.recorte}px`);
+
   await page.screenshot({ path: path.join(SHOTS, 'menu-movil-390.png') });
+
+  // Abrir todas las secciones debe dejar a la vista el catálogo completo.
+  const desplegado = await page.evaluate(async () => {
+    const titulos = [...document.querySelectorAll('.nav-section-title')];
+    for (const t of titulos) {
+      if (t.getAttribute('aria-expanded') !== 'true') t.click();
+      await new Promise((r) => setTimeout(r, 60));
+    }
+    return {
+      enlaces: document.querySelectorAll('.sidebar-nav .nav-item').length,
+      abiertas: [...document.querySelectorAll('.nav-section-title')]
+        .filter((t) => t.getAttribute('aria-expanded') === 'true').length,
+    };
+  });
+  anota('Al abrir las secciones aparecen todos los enlaces', desplegado.enlaces >= 9,
+    `${desplegado.enlaces} enlaces en ${desplegado.abiertas} secciones`);
+
+  await page.screenshot({ path: path.join(SHOTS, 'menu-movil-390-desplegado.png') });
 
   // Cerrar con la X
   await page.click('.mobile-close');
