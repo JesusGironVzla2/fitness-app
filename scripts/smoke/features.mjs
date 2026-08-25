@@ -11,6 +11,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { construirHistorialPorEjercicio, hace, resumirSesion } from '../../src/lib/history.js';
+import { resumirPlataforma } from '../../src/lib/platformStats.js';
 
 let n = 0;
 const ok = (m) => { n++; console.log('  ✓', m); };
@@ -186,6 +187,73 @@ const leer = (p) => fs.readFileSync(p, 'utf8');
     'scripts/responsive/main.jsx debe registrar todas las páginas, no sólo la de ?page='
   );
   ok('Navegación — el banco de pruebas registra todas las páginas');
+}
+
+// ------------------------------------------- 6. Estadísticas de la plataforma
+{
+  const DIA = 24 * 60 * 60 * 1000;
+  const AHORA = new Date('2026-08-25T12:00:00Z').getTime();
+  const haceDias = (dias) => new Date(AHORA - dias * DIA).toISOString();
+
+  const usuarios = [
+    { role: 'admin', status: 'active' },
+    { role: 'trainer', status: 'active' },
+    { role: 'trainer', status: 'active' },
+    { role: 'trainer', status: 'suspended' },   // no es un entrenador *activo*
+    { role: 'trainer', status: 'deleted' },     // baja
+    { role: 'student', status: 'active', createdAt: haceDias(5) },
+    { role: 'student', status: 'active', createdAt: haceDias(20) },
+    { role: 'user', status: 'active', createdAt: haceDias(40) },   // etiqueta antigua
+    { role: 'student', status: 'suspended', createdAt: haceDias(50) },
+    { role: 'student', status: 'deleted', createdAt: haceDias(3) }, // baja
+    { role: undefined, status: 'active' },      // sin rol: se degrada a alumno
+    null,
+  ];
+
+  const r = resumirPlataforma(usuarios, 356, AHORA);
+  assert.equal(r.entrenadores, 2, 'los entrenadores suspendidos y de baja no son activos');
+  // 5 = dos 'student' activos + el rol antiguo 'user' + el suspendido + el que
+  // no tiene rol, que normalizeRole degrada a alumno. Fuera queda la baja.
+  assert.equal(r.alumnos, 5, "cuenta el rol antiguo 'user', el suspendido y el que no tiene rol");
+  assert.equal(r.rutinas, 356);
+  assert.equal(r.nuevos, 2, 'altas de alumnos en los últimos 30 días');
+  assert.equal(r.previos, 2, 'altas de alumnos en los 30 días anteriores');
+  assert.equal(r.crecimiento, 0, '2 frente a 2 es 0%, no un +24% inventado');
+  ok('Plataforma — cuenta roles, bajas y suspendidos según sus reglas');
+
+  const sinFechas = resumirPlataforma(
+    [{ role: 'student', status: 'active' }, { role: 'student', status: 'active' }], 0, AHORA
+  );
+  assert.equal(sinFechas.alumnos, 2);
+  assert.equal(sinFechas.crecimiento, null, 'sin altas con las que comparar no se inventa un porcentaje');
+  ok('Plataforma — sin datos de alta el crecimiento es null, no 0%');
+
+  const creciendo = resumirPlataforma(
+    [
+      { role: 'student', status: 'active', createdAt: haceDias(1) },
+      { role: 'student', status: 'active', createdAt: haceDias(2) },
+      { role: 'student', status: 'active', createdAt: haceDias(3) },
+      { role: 'student', status: 'active', createdAt: haceDias(45) },
+    ], 0, AHORA
+  );
+  assert.equal(creciendo.crecimiento, 200, '3 altas frente a 1 es un +200%');
+  ok('Plataforma — el crecimiento compara 30 días contra los 30 anteriores');
+
+  assert.deepEqual(
+    resumirPlataforma(null, undefined, AHORA),
+    { entrenadores: 0, alumnos: 0, rutinas: 0, nuevos: 0, previos: 0, crecimiento: null },
+    'sin datos no debe reventar'
+  );
+  ok('Plataforma — tolera una lista de usuarios vacía o nula');
+
+  // La razón de existir de todo esto: que no vuelvan a ser constantes.
+  const dash = leer('src/pages/Dashboard.jsx');
+  const bloque = dash.slice(dash.indexOf('const adminStats'), dash.indexOf('const trainerStats'));
+  for (const inventado of ["'12'", "'148'", "'356'", "'+24%'"]) {
+    assert.ok(!bloque.includes(inventado), `las tarjetas de admin vuelven a tener ${inventado} a mano`);
+  }
+  assert.ok(bloque.includes('adminMetrics'), 'las tarjetas de admin deben leer los datos cargados');
+  ok('Plataforma — las tarjetas de admin no llevan cifras escritas a mano');
 }
 
 console.log(`\n  ${n} comprobaciones OK`);

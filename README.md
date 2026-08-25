@@ -124,6 +124,28 @@ inicial, pero puede pulsar «Enviar acceso» en la ficha del alumno para que est
 reciba un correo y se ponga la suya. En el login hay «¿Olvidaste tu
 contraseña?». Los mensajes no revelan si un correo está registrado o no.
 
+**Estadísticas del panel de admin.** Las cuatro tarjetas de «Estadísticas de la
+Plataforma» salen de Firestore (`src/lib/platformStats.js`); antes eran
+constantes escritas a mano, así que el panel enseñaba 12/148/356/+24% tuviera la
+plataforma lo que tuviera. Las reglas de recuento no son evidentes y están
+probadas en el smoke:
+
+- **Entrenadores activos** excluye suspendidos y bajas; **alumnos totales** sólo
+  descuenta las bajas, porque un suspendido sigue siendo alumno.
+- El rol se lee con `normalizeRole()`: contar por `role` en crudo dejaría fuera
+  a quien tenga la etiqueta antigua `user` o ninguna.
+- **Crecimiento** compara las altas de alumnos de los últimos 30 días con las de
+  los 30 anteriores. Los documentos antiguos no tienen `createdAt`; si no hay
+  con qué comparar, la tarjeta dice «—» y explica por qué, en lugar de enseñar
+  un 0 % que se leería como un dato.
+- El número de rutinas usa el agregado del servidor, que no tiene respaldo en
+  caché y falla sin conexión: se cae a contar documentos, que sí responde desde
+  la caché.
+
+Las tarjetas del panel de **entrenador** («Rutinas Asignadas», «Sesiones
+Completadas», «Retención») siguen siendo constantes, pendientes del mismo
+tratamiento.
+
 **Historial por ejercicio.** Al abrir una rutina, cada ejercicio muestra la
 última serie efectiva registrada («4x10 · 62,5 kg · RIR 2 · hace 3 días») con un
 botón para repetir esos valores. Sale de `workouts.actualData`, que ya se
