@@ -1,0 +1,152 @@
+rules_version = '2';
+
+// Reglas de seguridad de Firestore para CoachNode.
+//
+// Hasta ahora la base de datos no tenía más protección que la interfaz: quien
+// supiera hablar con Firebase directamente (la configuración del cliente es
+// pública por diseño) podía leer y escribir lo que quisiera. Estas reglas son
+// la cerradura real; las comprobaciones del código React sólo son comodidad.
+//
+// Se despliegan desde la consola de Firebase (Firestore Database → Rules) o con
+// `firebase deploy --only firestore:rules`.
+//
+// AVISO SOBRE EL PRIMER ADMINISTRADOR: aquí nadie puede darse a sí mismo el rol
+// 'admin'. El primer administrador se crea a mano desde la consola de Firebase
+// (Authentication → Add user, y luego el documento en users/{uid} con
+// role: 'admin'). El botón "¿Primer uso? Crea el Administrador" dejará de
+// funcionar una vez desplegadas estas reglas, que es justo lo que se busca:
+// era la puerta por la que cualquier visitante se hacía administrador.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- Ayudantes ----------
+
+    function autenticado() {
+      return request.auth != null;
+    }
+
+    function tienePerfil() {
+      return autenticado()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    // get() dentro de las reglas no vuelve a pasar por las reglas, así que esto
+    // no provoca recursión.
+    function perfil() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function rol() {
+      return tienePerfil() ? perfil().role : 'none';
+    }
+
+    // Las cuentas suspendidas o eliminadas pierden el acceso a los datos, no
+    // sólo el acceso a la interfaz.
+    function activo() {
+      return tienePerfil()
+        && !(perfil().get('status', 'active') in ['suspended', 'deleted']);
+    }
+
+    function esAdmin() {
+      return activo() && rol() == 'admin';
+    }
+
+    // 'user' es la etiqueta antigua de alumno; nunca debe conceder gestión.
+    function gestiona() {
+      return activo() && (rol() == 'admin' || rol() == 'trainer');
+    }
+
+    function propio(uid) {
+      return autenticado() && request.auth.uid == uid;
+    }
+
+    // chatId se construye como [uidA, uidB].sort().join('_') en Chat.jsx.
+    function participoEn(chatId) {
+      return autenticado() && chatId.split('_').hasAny([request.auth.uid]);
+    }
+
+    // ---------- users ----------
+
+    match /users/{uid} {
+      allow get:  if propio(uid) || gestiona();
+      allow list: if gestiona();
+
+      // Nadie se asigna a sí mismo un rol de gestión. El alta propia sólo
+      // ocurre en el respaldo de AuthContext, que escribe siempre 'student'.
+      allow create: if gestiona()
+                    || (propio(uid) && request.resource.data.role == 'student');
+
+      // Un usuario puede editar su perfil pero no ascenderse de rol ni
+      // reactivarse una cuenta suspendida.
+      allow update: if gestiona()
+                    || (propio(uid)
+                        && request.resource.data.role == resource.data.role
+                        && request.resource.data.get('status', 'active')
+                           == resource.data.get('status', 'active'));
+
+      allow delete: if esAdmin();
+    }
+
+    // ---------- workouts ----------
+
+    match /workouts/{id} {
+      allow read:   if gestiona() || resource.data.studentId == request.auth.uid;
+      allow create: if gestiona();
+      // El alumno marca series y ejercicios completados en su propia rutina.
+      allow update: if gestiona() || resource.data.studentId == request.auth.uid;
+      allow delete: if gestiona();
+    }
+
+    // ---------- progress_logs ----------
+
+    match /progress_logs/{id} {
+      allow read:   if gestiona() || resource.data.studentId == request.auth.uid;
+      allow create: if gestiona()
+                    || request.resource.data.studentId == request.auth.uid;
+      allow update, delete: if gestiona();
+    }
+
+    // ---------- exercises y settings ----------
+    // Catálogo compartido: lo lee todo el mundo dentro de la plataforma, lo
+    // edita sólo quien gestiona.
+
+    match /exercises/{id} {
+      allow read:  if activo();
+      allow write: if gestiona();
+    }
+
+    match /settings/{doc} {
+      allow read:  if activo();
+      allow write: if gestiona();
+    }
+
+    // ---------- messages ----------
+
+    match /messages/{id} {
+      allow read:   if gestiona() || participoEn(resource.data.chatId);
+      // gestiona() aparte de participoEn() porque al suplantar a un alumno el
+      // uid de la sesión no coincide con el del chat.
+      allow create: if gestiona() || participoEn(request.resource.data.chatId);
+      allow update, delete: if false;
+    }
+
+    // ---------- notifications ----------
+
+    match /notifications/{id} {
+      // PENDIENTE: NotificationPanel pide las 100 últimas sin filtrar y descarta
+      // las ajenas en el navegador, así que aquí no se puede restringir por
+      // destinatario sin romper el panel. Para cerrarlo del todo hay que cambiar
+      // esa consulta a where('targetUserId','==',uid) y luego endurecer esta
+      // línea a: resource.data.targetUserId == request.auth.uid || gestiona()
+      allow read:   if activo();
+      allow create: if activo();
+      allow update, delete: if gestiona();
+    }
+
+    // Cualquier colección no contemplada arriba queda cerrada.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

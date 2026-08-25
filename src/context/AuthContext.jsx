@@ -7,7 +7,7 @@ import {
   sendPasswordResetEmail,
   signOut
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, query, setDoc, where } from 'firebase/firestore';
 import { normalizeRole, ROLES, BLOCKED_STATUSES } from '../lib/roles';
 
 const AuthContext = createContext();
@@ -53,8 +53,38 @@ export function AuthProvider({ children }) {
     return credential;
   }
 
-  // Registrar un usuario
-  async function signup(email, password, role = ROLES.ADMIN) {
+  /**
+   * Registra un usuario.
+   *
+   * El botón "¿Primer uso? Crea el Administrador" llamaba aquí con rol 'admin'
+   * sin comprobar nada: cualquier visitante podía crearse una cuenta con
+   * permisos totales, y el rol admin puede suplantar a otras cuentas. Mientras
+   * el despliegue estuvo cerrado tras el login de Vercel no se notaba; al
+   * abrirlo al público pasó a ser una puerta abierta.
+   *
+   * El alta de administrador sólo funciona ahora si todavía no existe ninguno,
+   * que es justo lo que el botón dice hacer. El rol por defecto pasa a ser el
+   * de menos permisos: que un descuido al llamar a signup() reparta permisos
+   * totales es lo que causó el problema.
+   *
+   * Esto cierra la puerta evidente, pero es una comprobación de cliente y no
+   * es la cerradura: quien sepa hablar con Firebase directamente la rodea. La
+   * defensa real son las reglas de `firestore.rules`.
+   */
+  async function signup(email, password, role = ROLES.STUDENT) {
+    if (role === ROLES.ADMIN) {
+      const yaHayAdmin = await getDocs(
+        query(collection(db, 'users'), where('role', '==', ROLES.ADMIN), limit(1))
+      );
+      if (!yaHayAdmin.empty) {
+        const err = new Error(
+          'Ya existe un administrador. Pide que te creen la cuenta desde dentro de la plataforma.'
+        );
+        err.code = 'auth/admin-already-exists';
+        throw err;
+      }
+    }
+
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     await setDoc(doc(db, "users", userCredential.user.uid), {
       email: email,

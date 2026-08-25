@@ -32,7 +32,8 @@ export default function Login() {
     try {
       const cleanEmail = email.trim();
       if (isRegister) {
-        await signup(cleanEmail, password, 'admin'); // Por ahora crea admins por defecto
+        // Sólo prospera si aún no hay ningún administrador (ver AuthContext).
+        await signup(cleanEmail, password, 'admin');
       } else {
         await login(cleanEmail, password);
       }
@@ -46,6 +47,7 @@ export default function Login() {
       else if (err.code === 'auth/invalid-credential') errorMsg = 'Correo o contraseña incorrectos.';
       else if (err.code === 'auth/operation-not-allowed') errorMsg = 'El inicio con correo/contraseña está deshabilitado en Firebase.';
       else if (err.code === 'auth/account-disabled') errorMsg = err.message;
+      else if (err.code === 'auth/admin-already-exists') errorMsg = err.message;
       else if (err.code === 'auth/user-not-found') errorMsg = 'No existe ninguna cuenta con ese correo.';
       else if (err.code === 'auth/wrong-password') errorMsg = 'Correo o contraseña incorrectos.';
       else if (err.code === 'auth/too-many-requests') errorMsg = 'Demasiados intentos fallidos. Espera unos minutos e inténtalo de nuevo.';
